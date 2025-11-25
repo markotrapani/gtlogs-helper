@@ -487,7 +487,14 @@ test: Add validation tests for Jira IDs
 
 ## Version History
 
-**Current Version:** v1.7.4 - Progress bar fix
+**Current Version:** v1.7.5 - Interactive settings menu
+
+**v1.7.5 (2025-01-24):**
+
+- New Settings menu in interactive mode (press 3 or S)
+- Configure AWS profile and download directory without CLI flags
+- Guided prompts with automatic directory creation
+- Shows current settings before configuration options
 
 **v1.7.4 (2025-01-24):**
 

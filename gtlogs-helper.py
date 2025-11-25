@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.7.4"
+VERSION = "1.7.5"
 
 import argparse
 import configparser
@@ -2222,11 +2222,12 @@ def interactive_mode(debug=False):
     print("Select operation mode:")
     print("☁️ ⬆️  1 or U: UPLOAD to S3 (generate links and upload files)")
     print("☁️ ⬇️  2 or D: DOWNLOAD from S3 (retrieve files from existing paths)")
+    print("⚙️     3 or S: SETTINGS (configure defaults)")
     print()
 
     try:
         while True:
-            mode_input = input_with_esc_detection("Your choice: ", auto_submit_chars=['1', 'u', '2', 'd']).strip().lower()
+            mode_input = input_with_esc_detection("Your choice: ", auto_submit_chars=['1', 'u', '2', 'd', '3', 's']).strip().lower()
             check_exit_input(mode_input)
 
             # Default to upload (1) if user presses Enter
@@ -2239,8 +2240,12 @@ def interactive_mode(debug=False):
             elif mode_input in ["2", "d"]:
                 interactive_download_mode(debug=debug)
                 break
+            elif mode_input in ["3", "s"]:
+                interactive_settings_mode(debug=debug)
+                # Return to main menu after settings
+                return interactive_mode(debug=debug)
             else:
-                print("❌ Invalid choice. Please enter 1/U or 2/D\n")
+                print("❌ Invalid choice. Please enter 1/U, 2/D, or 3/S\n")
         return 0
     except UserExitException:
         print("👋 Exiting...\n")
@@ -2544,6 +2549,99 @@ def interactive_upload_mode(debug=False):
         # Save history even on error
         generator._save_history()
         return 1
+
+
+def interactive_settings_mode(debug=False):
+    """Run the settings configuration in interactive mode."""
+    helper = GTLogsHelper(debug=debug)
+
+    print("\n" + "-"*50)
+    print("Settings - Configure defaults")
+    print("-"*50 + "\n")
+
+    # Show current settings
+    current_profile = helper.get_default_aws_profile()
+    current_download_dir = helper.get_default_download_dir()
+
+    print("Current Settings:")
+    print(f"  AWS Profile:    {current_profile if current_profile else '(not set)'}")
+    print(f"  Download Dir:   {current_download_dir if current_download_dir else '(not set)'}")
+    if current_download_dir:
+        print(f"                  └─ Downloads organized into ZD ticket subfolders")
+    print()
+
+    print("What would you like to configure?")
+    print("  1 or P: Set default AWS profile")
+    print("  2 or D: Set default download directory")
+    print("  3 or B: Back to main menu")
+    print()
+
+    while True:
+        choice = input_with_esc_detection("Your choice: ", auto_submit_chars=['1', 'p', '2', 'd', '3', 'b']).strip().lower()
+        check_exit_input(choice)
+
+        if choice in ['3', 'b', '']:
+            print()
+            return
+
+        if choice in ['1', 'p']:
+            # Set AWS profile
+            print()
+            new_profile = input_with_esc_detection(
+                f"Enter AWS profile name{' (current: ' + current_profile + ')' if current_profile else ''}: "
+            ).strip()
+            check_exit_input(new_profile)
+
+            if new_profile:
+                helper._save_config(new_profile)
+                print()
+            else:
+                print("⚠️  No profile entered, keeping current setting\n")
+            return
+
+        elif choice in ['2', 'd']:
+            # Set download directory
+            print()
+            print("Enter the default download directory.")
+            print("Downloads will be organized into subfolders by Zendesk ticket number.")
+            print(f"Example: ~/Downloads/packages → ~/Downloads/packages/150576/file.tar.gz")
+            print()
+
+            new_dir = input_with_esc_detection(
+                f"Download directory{' (current: ' + current_download_dir + ')' if current_download_dir else ''}: "
+            ).strip()
+            check_exit_input(new_dir)
+
+            if new_dir:
+                # Expand ~ and validate
+                expanded_dir = os.path.expanduser(new_dir)
+
+                if not os.path.isdir(expanded_dir):
+                    print(f"\n⚠️  Directory does not exist: {expanded_dir}")
+                    create = input_with_esc_detection("Create it? (Y/n): ").strip().lower()
+                    check_exit_input(create)
+
+                    if create in ['', 'y', 'yes']:
+                        try:
+                            os.makedirs(expanded_dir, exist_ok=True)
+                            print(f"✓ Created directory: {expanded_dir}")
+                        except OSError as e:
+                            print(f"❌ Failed to create directory: {e}\n")
+                            return
+                    else:
+                        print("❌ Cancelled\n")
+                        return
+
+                helper._save_download_dir(expanded_dir)
+                print(f"  └─ Downloads will be organized into ZD ticket subfolders")
+                print(f"  └─ Example: {expanded_dir}/150576/debuginfo.tar.gz")
+                print()
+            else:
+                print("⚠️  No directory entered, keeping current setting\n")
+            return
+
+        else:
+            print("❌ Invalid choice. Please enter 1/P, 2/D, or 3/B\n")
 
 
 def interactive_download_mode(debug=False):
