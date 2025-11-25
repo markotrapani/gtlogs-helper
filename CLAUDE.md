@@ -496,22 +496,12 @@ test: Add validation tests for Jira IDs
 - Guided prompts with automatic directory creation
 - Shows current settings before configuration options
 
-**v1.7.4 (2025-01-24):**
-
-- Fixed progress bar newline bug where each update printed on a new line
-- Carriage return now correctly placed before padded string for proper overwrite
-
 **v1.7.3 (2025-01-24):**
 
 - Configurable default download directory with `--set-download-dir`
 - Auto-organize downloads into Zendesk ticket subfolders
 - Smart path suggestions in interactive mode (press Enter to accept)
 - `--show-config` now displays download directory setting
-
-**v1.7.2 (2025-01-21):**
-
-- Fixed progress bar display bug where ETA text would overlap (e.g., "3sss44s")
-- Progress bar now properly clears previous line content to prevent artifacts
 
 **v1.7.1 (2025-01-21):**
 

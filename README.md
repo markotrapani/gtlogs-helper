@@ -393,11 +393,6 @@ python3 tests/test_suite.py
 - 📂 **Configure download directory** - Set default download location with guided
   prompts and automatic directory creation
 
-### v1.7.4 - Progress Bar Fix
-
-- 🐛 **Fixed progress bar newline bug** - Progress bar now correctly overwrites
-  the same line instead of printing each update on a new line
-
 ### v1.7.3 - Smart Download Directory
 
 - 📂 **Configurable download directory** - Set a default download location with
@@ -406,12 +401,6 @@ python3 tests/test_suite.py
   subfolders named by ticket number (e.g., `~/Downloads/packages/150576/`)
 - 💡 **Smart path suggestions** - Interactive mode suggests the configured path,
   just press Enter to accept
-
-### v1.7.2 - Progress Bar Display Fix
-
-- 🐛 **Fixed progress bar artifacts** - Resolved issue where ETA text would
-  overlap (e.g., "3sss44s" instead of "3s") during downloads by properly
-  clearing previous line content
 
 ### v1.7.1 - Jira-Based Download & Smart Fallback
 
