@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.7.3"
+VERSION = "1.7.4"
 
 import argparse
 import configparser
@@ -350,8 +350,8 @@ def display_progress_bar(completed: int, total: int, speed_str: str = "", bar_le
             pass
 
     # Display progress bar (pad with spaces to clear previous longer lines)
-    progress_line = f"\r   [{bar}] {percentage}% | {completed_str}/{total_str} | {speed_str} {eta_str}"
-    print(f"{progress_line:<120}", end='', flush=True)
+    progress_line = f"   [{bar}] {percentage}% | {completed_str}/{total_str} | {speed_str} {eta_str}"
+    print(f"\r{progress_line:<120}", end='', flush=True)
 
 
 class GTLogsHelper:

@@ -487,7 +487,12 @@ test: Add validation tests for Jira IDs
 
 ## Version History
 
-**Current Version:** v1.7.3 - Smart download directory
+**Current Version:** v1.7.4 - Progress bar fix
+
+**v1.7.4 (2025-01-24):**
+
+- Fixed progress bar newline bug where each update printed on a new line
+- Carriage return now correctly placed before padded string for proper overwrite
 
 **v1.7.3 (2025-01-24):**
 
