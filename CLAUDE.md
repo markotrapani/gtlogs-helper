@@ -487,7 +487,14 @@ test: Add validation tests for Jira IDs
 
 ## Version History
 
-**Current Version:** v1.7.2 - Progress bar display fix
+**Current Version:** v1.7.3 - Smart download directory
+
+**v1.7.3 (2025-01-24):**
+
+- Configurable default download directory with `--set-download-dir`
+- Auto-organize downloads into Zendesk ticket subfolders
+- Smart path suggestions in interactive mode (press Enter to accept)
+- `--show-config` now displays download directory setting
 
 **v1.7.2 (2025-01-21):**
 

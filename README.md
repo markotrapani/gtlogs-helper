@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.7.2 |
+**Current Version:** v1.7.3 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -39,6 +39,7 @@ authentication, batch operations, and intelligent path generation.
 - 📤 **Upload Mode** - Generate S3 paths for ZD-only or ZD+Jira scenarios
 - 📥 **Download Mode** - List, select, and download files from S3
 - 🎯 **Jira-based Download** - Paste Jira URL or ID to auto-find support packages
+- 📂 **Smart Download Paths** - Auto-organize downloads into ZD ticket subfolders
 - 📁 **Directory Upload** - Upload entire directories with pattern filtering
   and dry-run mode
 - 🔄 **Batch Operations** - Upload/download multiple files simultaneously
@@ -157,6 +158,25 @@ Use for Engineering escalation via Jira tickets (RED-# or MOD-#).
 
 Profile is saved to `~/.gtlogs-config.ini` and used for all operations.
 
+### Set Default Download Directory
+
+```bash
+./gtlogs-helper.py --set-download-dir ~/Downloads/packages
+```
+
+When downloading files, they will automatically be organized into subfolders
+named by Zendesk ticket number:
+
+```text
+~/Downloads/packages/
+├── 150576/
+│   └── debuginfo.tar.gz
+├── 145980/
+│   └── support-package.tar.gz
+└── 172041/
+    └── cluster-logs.tar.gz
+```
+
 ### View Configuration
 
 ```bash
@@ -167,8 +187,8 @@ Profile is saved to `~/.gtlogs-config.ini` and used for all operations.
 
 **Config file:** `~/.gtlogs-config.ini`
 
-- Stores default AWS profile
-- Commands: `--set-profile`, `--show-config`
+- Stores default AWS profile and download directory
+- Commands: `--set-profile`, `--set-download-dir`, `--show-config`
 
 **History file:** `~/.gtlogs-history.json`
 
@@ -345,7 +365,7 @@ The project includes comprehensive automated testing:
 # Run test suite
 python3 tests/test_suite.py
 
-# Expected: 16/16 tests passing
+# Expected: 62/62 tests passing
 ```
 
 **Test coverage:**
@@ -354,6 +374,9 @@ python3 tests/test_suite.py
 - S3 path generation (ZD-only, ZD+Jira)
 - AWS authentication handling
 - Batch operations (upload/download)
+- Directory upload (dry-run, patterns, error handling)
+- Resume/retry functionality
+- Smart download directory (v1.7.3+)
 - Configuration management
 
 **[➜ Testing Documentation](https://github.com/markotrapani/gtlogs-helper/wiki/Testing)**
@@ -361,6 +384,15 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.7.3 - Smart Download Directory
+
+- 📂 **Configurable download directory** - Set a default download location with
+  `--set-download-dir ~/Downloads/packages`
+- 🎯 **Auto-organized by Zendesk ticket** - Downloads automatically go into
+  subfolders named by ticket number (e.g., `~/Downloads/packages/150576/`)
+- 💡 **Smart path suggestions** - Interactive mode suggests the configured path,
+  just press Enter to accept
 
 ### v1.7.2 - Progress Bar Display Fix
 

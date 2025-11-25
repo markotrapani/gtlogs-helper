@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.7.1"
+VERSION = "1.7.3"
 
 import argparse
 import configparser
@@ -394,6 +394,64 @@ class GTLogsHelper:
             return self.config.get('default', 'aws_profile')
         except (configparser.NoSectionError, configparser.NoOptionError):
             return None
+
+    def get_default_download_dir(self):
+        """Get the default download directory from config."""
+        try:
+            path = self.config.get('default', 'download_dir')
+            return os.path.expanduser(path) if path else None
+        except (configparser.NoSectionError, configparser.NoOptionError):
+            return None
+
+    def _save_download_dir(self, download_dir):
+        """Save default download directory to config file."""
+        if not self.config.has_section('default'):
+            self.config.add_section('default')
+        # Store with ~ for portability if it's in home directory
+        home = os.path.expanduser("~")
+        if download_dir.startswith(home):
+            download_dir = "~" + download_dir[len(home):]
+        self.config.set('default', 'download_dir', download_dir)
+
+        with open(self.CONFIG_FILE, 'w') as f:
+            self.config.write(f)
+        print(f"✓ Default download directory saved to {self.CONFIG_FILE}")
+
+    def get_smart_download_path(self, s3_key, filename=None):
+        """Generate smart download path based on default dir and ZD ticket.
+
+        If a default download directory is configured and a Zendesk ID can be
+        extracted from the S3 key, returns a path like:
+        {default_dir}/{zendesk_number}/{filename}
+
+        Args:
+            s3_key: The S3 key (e.g., "zendesk-tickets/ZD-150576/file.tar.gz")
+            filename: Optional filename override (defaults to basename of s3_key)
+
+        Returns:
+            Tuple of (suggested_path, zendesk_number or None)
+            Returns (None, None) if no default dir configured
+        """
+        default_dir = self.get_default_download_dir()
+        if not default_dir:
+            return None, None
+
+        # Extract filename from key if not provided
+        if not filename:
+            filename = os.path.basename(s3_key.rstrip('/'))
+            if not filename:
+                return None, None
+
+        # Try to extract Zendesk ID from the S3 key
+        # Patterns: ZD-123456, zendesk-tickets/ZD-123456/, exa-to-gt/ZD-123456-RED-xxx/
+        zd_match = re.search(r'ZD-(\d+)', s3_key, re.IGNORECASE)
+        if zd_match:
+            zd_number = zd_match.group(1)
+            smart_path = os.path.join(default_dir, zd_number, filename)
+            return smart_path, zd_number
+
+        # No ZD found, just use default dir with filename
+        return os.path.join(default_dir, filename), None
 
     def _load_history(self):
         """Load input history from history file."""
@@ -2736,13 +2794,23 @@ def interactive_download_mode(debug=False):
                 print("❌ No valid files selected\n")
                 return 1
 
-            # Get local directory
+            # Get local directory - use smart path if configured
             print("\nWhere to save the files?")
-            local_dir = input_with_esc_detection("Local directory (press Enter for current directory): ").strip()
+            smart_path, zd_number = helper.get_smart_download_path(key)
+            if smart_path:
+                smart_dir = os.path.dirname(smart_path)
+                print(f"💡 Suggested: {smart_dir}")
+                local_dir = input_with_esc_detection(f"Local directory (press Enter to use suggested): ").strip()
+            else:
+                local_dir = input_with_esc_detection("Local directory (press Enter for current directory): ").strip()
             check_exit_input(local_dir)
 
             if not local_dir:
-                local_dir = "."
+                if smart_path:
+                    local_dir = smart_dir
+                    print(f"✓ Using: {local_dir}")
+                else:
+                    local_dir = "."
             else:
                 # Expand ~ if present
                 local_dir = os.path.expanduser(local_dir)
@@ -2766,13 +2834,27 @@ def interactive_download_mode(debug=False):
             # Single file download
             print(f"\n📥 Downloading s3://{bucket}/{key}...")
 
-            # Get local path
+            # Get local path - use smart path if configured
             default_name = os.path.basename(key) if key else "download"
-            local_path = input_with_esc_detection(f"Save as (press Enter for '{default_name}'): ").strip()
+            smart_path, zd_number = helper.get_smart_download_path(key)
+            if smart_path:
+                print(f"💡 Suggested: {smart_path}")
+                local_path = input_with_esc_detection(f"Save as (press Enter to use suggested): ").strip()
+            else:
+                local_path = input_with_esc_detection(f"Save as (press Enter for '{default_name}'): ").strip()
             check_exit_input(local_path)
 
             if not local_path:
-                local_path = default_name
+                if smart_path:
+                    local_path = smart_path
+                    # Create parent directory if needed
+                    parent_dir = os.path.dirname(local_path)
+                    if parent_dir and not os.path.exists(parent_dir):
+                        os.makedirs(parent_dir, exist_ok=True)
+                        print(f"✓ Created directory: {parent_dir}")
+                    print(f"✓ Using: {local_path}")
+                else:
+                    local_path = default_name
             else:
                 # Expand ~ if present
                 local_path = os.path.expanduser(local_path)
@@ -2820,12 +2902,22 @@ def interactive_download_mode(debug=False):
                             print("❌ No valid files selected\n")
                             return 1
 
-                        # Get download directory
-                        local_dir = input_with_esc_detection("Local directory (press Enter for current directory): ").strip()
+                        # Get download directory - use smart path if configured
+                        smart_path, zd_number = helper.get_smart_download_path(dir_key)
+                        if smart_path:
+                            smart_dir = os.path.dirname(smart_path)
+                            print(f"💡 Suggested: {smart_dir}")
+                            local_dir = input_with_esc_detection(f"Local directory (press Enter to use suggested): ").strip()
+                        else:
+                            local_dir = input_with_esc_detection("Local directory (press Enter for current directory): ").strip()
                         check_exit_input(local_dir)
 
                         if not local_dir:
-                            local_dir = "."
+                            if smart_path:
+                                local_dir = smart_dir
+                                print(f"✓ Using: {local_dir}")
+                            else:
+                                local_dir = "."
                         else:
                             local_dir = os.path.expanduser(local_dir)
 
@@ -2925,6 +3017,8 @@ Examples:
                        help='AWS profile to use (overrides default)')
     parser.add_argument('--set-profile', dest='set_profile',
                        help='Set default AWS profile')
+    parser.add_argument('--set-download-dir', dest='set_download_dir',
+                       help='Set default download directory (files organized by ZD ticket)')
     parser.add_argument('--show-config', action='store_true',
                        help='Show current configuration')
     parser.add_argument('-v', '--version', action='store_true',
@@ -2985,10 +3079,30 @@ Examples:
         helper._save_config(args.set_profile)
         return 0
 
+    if args.set_download_dir:
+        download_dir = os.path.expanduser(args.set_download_dir)
+        if not os.path.isdir(download_dir):
+            print(f"⚠️  Directory does not exist: {download_dir}")
+            create = input("Create it? (Y/n): ").strip().lower()
+            if create in ['', 'y', 'yes']:
+                os.makedirs(download_dir, exist_ok=True)
+                print(f"✓ Created directory: {download_dir}")
+            else:
+                print("❌ Cancelled")
+                return 1
+        helper._save_download_dir(download_dir)
+        print(f"  └─ Downloads will be organized into ZD ticket subfolders")
+        print(f"  └─ Example: {download_dir}/150576/debuginfo.tar.gz")
+        return 0
+
     if args.show_config:
         default_profile = helper.get_default_aws_profile()
+        default_download_dir = helper.get_default_download_dir()
         print(f"Configuration file: {helper.CONFIG_FILE}")
         print(f"Default AWS profile: {default_profile if default_profile else '(not set)'}")
+        print(f"Default download dir: {default_download_dir if default_download_dir else '(not set)'}")
+        if default_download_dir:
+            print(f"  └─ Downloads will be organized into ZD ticket subfolders")
         return 0
 
     if args.version:
@@ -3063,8 +3177,20 @@ Examples:
                 print("❌ Cannot proceed without authentication")
                 return 1
 
-        # Determine output path (expand ~ if present)
-        output_path = os.path.expanduser(args.output_path) if args.output_path else "."
+        # Determine output path - use smart path if configured and no explicit output
+        if args.output_path:
+            output_path = os.path.expanduser(args.output_path)
+        else:
+            # Try smart path based on ZD ticket
+            smart_path, zd_number = helper.get_smart_download_path(key)
+            if smart_path:
+                output_path = os.path.dirname(smart_path)
+                print(f"💡 Using configured download directory: {output_path}")
+                if not os.path.exists(output_path):
+                    os.makedirs(output_path, exist_ok=True)
+                    print(f"✓ Created directory: {output_path}")
+            else:
+                output_path = "."
 
         # If downloading a directory, list and prompt
         if key.endswith("/"):
