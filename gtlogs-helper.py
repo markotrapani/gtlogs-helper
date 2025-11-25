@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.7.5"
+VERSION = "1.7.6"
 
 import argparse
 import configparser
@@ -2222,7 +2222,7 @@ def interactive_mode(debug=False):
     print("Select operation mode:")
     print("☁️ ⬆️  1 or U: UPLOAD to S3 (generate links and upload files)")
     print("☁️ ⬇️  2 or D: DOWNLOAD from S3 (retrieve files from existing paths)")
-    print("⚙️     3 or S: SETTINGS (configure defaults)")
+    print("⚙️  3 or S: SETTINGS (configure defaults)")
     print()
 
     try:
