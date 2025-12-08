@@ -470,6 +470,39 @@ test: Add validation tests for Jira IDs
 - [ ] Test authentication flow if changed
 - [ ] No debug print statements left in code
 
+### Creating Releases (IMPORTANT)
+
+**When creating a new version for testing or release, ALWAYS create a GitHub
+Release, not just a git tag.**
+
+The tool's auto-update feature (`Ctrl+U`) checks for GitHub Releases via the
+GitHub API, not git tags. A tag without a release will not be detected by users.
+
+**Correct workflow:**
+
+```bash
+# 1. Commit your changes
+git add <files>
+git commit -m "fix: Description of changes"
+
+# 2. Create tag AND release together
+git tag v1.7.8
+git push origin main
+git push origin v1.7.8
+
+# 3. Create GitHub Release (REQUIRED for auto-update to work)
+gh release create v1.7.8 --title "v1.7.8 - Brief description" --notes "## Changes
+
+- Change 1
+- Change 2"
+```
+
+**Why this matters:**
+
+- `gh release create` makes the version visible to the auto-update checker
+- Git tags alone are not queryable via GitHub's release API
+- Users running `Ctrl+U` will see "Could not check for updates" if no release exists
+
 ---
 
 ## Contact & Support
