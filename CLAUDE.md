@@ -517,6 +517,20 @@ If you forget this, users will be stuck in an infinite update loop where:
 - Git tags alone are not queryable via GitHub's release API
 - Users running `Ctrl+U` will see "Could not check for updates" if no release exists
 
+**⚠️ NEVER reuse a tag name after deleting it!**
+
+If you make a mistake and need to "redo" a release, **always use a new version
+number** (e.g., v1.7.9 instead of recreating v1.7.8).
+
+`raw.githubusercontent.com` aggressively caches files by tag name. If you:
+
+1. Create tag v1.7.8 (with wrong VERSION)
+2. Delete the tag and release
+3. Recreate v1.7.8 pointing to a new commit
+
+The CDN will **still serve the old cached file** indefinitely. There is no way
+to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
+
 ---
 
 ## Contact & Support
