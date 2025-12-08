@@ -2867,20 +2867,20 @@ def interactive_download_mode(debug=False):
 
             # Ask which file(s) to download
             print("\nSelect files to download:")
+            print("  - Press Enter to download all files")
             print("  - Enter file number(s) separated by commas (e.g., 1,3,5)")
-            print("  - Enter 'all' or 'a' to download all files")
-            print("  - Press Enter to cancel")
+            print("  - Enter 'c' to cancel")
             print()
 
             selection = input_with_esc_detection("Your selection: ").strip()
             check_exit_input(selection)
 
-            if not selection:
+            if selection.lower() in ['c', 'cancel']:
                 print("\nDownload cancelled\n")
                 return 0
 
             files_to_download = []
-            if selection.lower() in ['all', 'a']:
+            if not selection or selection.lower() in ['all', 'a']:
                 files_to_download = files
             else:
                 try:
@@ -2975,20 +2975,20 @@ def interactive_download_mode(debug=False):
 
                         # Ask which file(s) to download
                         print("\nSelect files to download:")
+                        print("  - Press Enter to download all files")
                         print("  - Enter file number(s) separated by commas (e.g., 1,3,5)")
-                        print("  - Enter 'all' or 'a' to download all files")
-                        print("  - Press Enter to cancel")
+                        print("  - Enter 'c' to cancel")
                         print()
 
                         selection = input_with_esc_detection("Your selection: ").strip()
                         check_exit_input(selection)
 
-                        if not selection:
+                        if selection.lower() in ['c', 'cancel']:
                             print("\nDownload cancelled\n")
                             return 0
 
                         files_to_download = []
-                        if selection.lower() in ['all', 'a']:
+                        if not selection or selection.lower() in ['all', 'a']:
                             files_to_download = files
                         else:
                             try:
