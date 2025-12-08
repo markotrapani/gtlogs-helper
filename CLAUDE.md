@@ -481,24 +481,38 @@ GitHub API, not git tags. A tag without a release will not be detected by users.
 **Correct workflow:**
 
 ```bash
-# 1. Commit your changes
+# 1. UPDATE THE VERSION CONSTANT FIRST (line 8 of gtlogs-helper.py)
+#    VERSION = "1.7.9"  # <-- Change this to match the new tag!
+
+# 2. Commit your changes (including version bump)
 git add <files>
 git commit -m "fix: Description of changes"
 
-# 2. Create tag AND release together
-git tag v1.7.8
+# 3. Create tag AND release together
+git tag v1.7.9
 git push origin main
-git push origin v1.7.8
+git push origin v1.7.9
 
-# 3. Create GitHub Release (REQUIRED for auto-update to work)
-gh release create v1.7.8 --title "v1.7.8 - Brief description" --notes "## Changes
+# 4. Create GitHub Release (REQUIRED for auto-update to work)
+gh release create v1.7.9 --title "v1.7.9 - Brief description" --notes "## Changes
 
 - Change 1
 - Change 2"
 ```
 
+**⚠️ CRITICAL: Update VERSION constant BEFORE tagging!**
+
+The `VERSION` constant on line 8 of `gtlogs-helper.py` MUST match the git tag.
+If you forget this, users will be stuck in an infinite update loop where:
+
+1. Script reports v1.7.7
+2. Update checker finds v1.7.8 available
+3. User updates, but downloaded file still says v1.7.7
+4. Repeat forever
+
 **Why this matters:**
 
+- `VERSION` constant determines what `--version` reports
 - `gh release create` makes the version visible to the auto-update checker
 - Git tags alone are not queryable via GitHub's release API
 - Users running `Ctrl+U` will see "Could not check for updates" if no release exists
