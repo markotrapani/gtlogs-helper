@@ -1259,7 +1259,7 @@ class GTLogsHelper:
 
             if success:
                 success_count += 1
-                results.append(('success', filename))
+                results.append(('success', filename, file_s3_path))
                 if save_state and self.current_state:
                     self.current_state['files'][i-1]['status'] = 'completed'
                     if verify:
@@ -1267,7 +1267,7 @@ class GTLogsHelper:
                     self._save_state()
             else:
                 failure_count += 1
-                results.append(('failure', filename))
+                results.append(('failure', filename, ''))
                 if save_state and self.current_state:
                     self.current_state['files'][i-1]['status'] = 'failed'
                     self.current_state['files'][i-1]['last_error'] = 'Upload failed after retries'
@@ -1284,9 +1284,15 @@ class GTLogsHelper:
         print(f"✅ Successful: {success_count}/{total_files}")
         print(f"❌ Failed: {failure_count}/{total_files}")
 
+        if success_count > 0:
+            print(f"\nUploaded files:")
+            for status, filename, s3_path in results:
+                if status == 'success':
+                    print(f"  📁 {s3_path}")
+
         if failure_count > 0:
             print(f"\nFailed files:")
-            for status, filename in results:
+            for status, filename, s3_path in results:
                 if status == 'failure':
                     print(f"  - {filename}")
         else:
@@ -1412,10 +1418,10 @@ class GTLogsHelper:
 
             if success:
                 success_count += 1
-                results.append(('success', rel_path))
+                results.append(('success', rel_path, s3_full_path))
             else:
                 failure_count += 1
-                results.append(('failure', rel_path))
+                results.append(('failure', rel_path, ''))
 
             # Add separator between uploads (except after last one)
             if i < total_files:
@@ -1428,9 +1434,15 @@ class GTLogsHelper:
         print(f"✅ Successful: {success_count}/{total_files}")
         print(f"❌ Failed: {failure_count}/{total_files}")
 
+        if success_count > 0:
+            print(f"\nUploaded files:")
+            for status, filepath, s3_path in results:
+                if status == 'success':
+                    print(f"  📁 {s3_path}")
+
         if failure_count > 0:
             print(f"\nFailed files:")
-            for status, filepath in results:
+            for status, filepath, s3_path in results:
                 if status == 'failure':
                     print(f"  - {filepath}")
 
