@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.7.5 |
+**Current Version:** v1.8.0 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -384,6 +384,29 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.8.0 - Upload Summary with S3 Paths
+
+- 📁 **Full S3 paths in upload summary** - After batch or directory uploads,
+  the summary now displays full S3 paths for all successfully uploaded files
+- 📋 **Easy copy/share** - Copy exact file locations directly from the output
+
+### v1.7.9 - Improved Download Selection UX
+
+- ⬇️ **Smarter download defaults** - Press Enter (empty input) now downloads
+  all files instead of cancelling
+- 🚫 **Cancel with 'c'** - Enter `c` to cancel instead of pressing Enter
+- 🔧 `all` and `a` shortcuts still work for explicit selection
+
+### v1.7.7 - Progress Bar Fix
+
+- 🐛 **Progress bar fix** - Fixed progress bar displaying on multiple lines
+  instead of updating in place
+- 🔧 Uses ANSI escape sequences for proper in-place line updates
+
+### v1.7.6 - Menu Formatting
+
+- 🎨 **Menu spacing** - Minor formatting adjustment to interactive menu spacing
 
 ### v1.7.5 - Interactive Settings Menu
 

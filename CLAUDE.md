@@ -548,7 +548,27 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.7.5 - Interactive settings menu
+**Current Version:** v1.8.0 - Display S3 paths in upload summary
+
+**v1.8.0 (2026-01-20):**
+
+- Full S3 paths displayed in upload summary after batch/directory uploads
+- Easy to copy/share exact file locations from output
+
+**v1.7.9 (2025-12-08):**
+
+- Download selection default changed - Enter now downloads all files
+- Enter `c` to cancel instead of pressing Enter
+- `all` and `a` shortcuts still work for explicit selection
+
+**v1.7.7 (2025-11-25):**
+
+- Fixed progress bar displaying on multiple lines
+- Uses ANSI escape sequences for proper in-place line updates
+
+**v1.7.6 (2025-11-25):**
+
+- Minor formatting adjustment to interactive menu spacing
 
 **v1.7.5 (2025-01-24):**
 
