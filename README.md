@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.8.0 |
+**Current Version:** v1.8.1 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -206,8 +206,8 @@ All inputs are strictly validated:
   - ✅ Valid: `145980`, `ZD-145980`, `zd-145980`
   - ❌ Invalid: `145980abc`, `ZD-abc`
 
-- **Jira IDs:** Must be `RED-#` or `MOD-#` with numerical suffix
-  - ✅ Valid: `RED-172041`, `MOD-12345`, `RED172041` (auto-formatted)
+- **Jira IDs:** Must be `RED-#`, `MOD-#`, or `RDSC-#` with numerical suffix
+  - ✅ Valid: `RED-172041`, `MOD-12345`, `RDSC-4841`, `RED172041` (auto-formatted)
   - ❌ Invalid: `RED-172041abc`, `ABC-12345`, `172041`
 
 - **File Paths:** Must exist and be files (not directories)
@@ -384,6 +384,11 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.8.1 - RDSC Jira Prefix Support
+
+- 🎯 **RDSC- prefix support** - Added `RDSC-` as a valid Jira ID prefix
+  alongside `RED-` and `MOD-` for RDI issues
 
 ### v1.8.0 - Upload Summary with S3 Paths
 

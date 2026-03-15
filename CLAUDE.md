@@ -49,9 +49,9 @@ upload, download, and path generation
 
 #### Jira ID Validation
 
-- **Must be RED-# or MOD-# with numerical suffix only**
-- **Accepted formats:** `RED-172041`, `MOD-12345`, `RED172041` (auto-adds hyphen)
-- **Output format:** `RED-172041` or `MOD-12345`
+- **Must be RED-#, MOD-#, or RDSC-# with numerical suffix only**
+- **Accepted formats:** `RED-172041`, `MOD-12345`, `RDSC-4841`, `RED172041` (auto-adds hyphen)
+- **Output format:** `RED-172041`, `MOD-12345`, or `RDSC-4841`
 - **Validation function:** `validate_jira_id()` in [gtlogs-helper.py:90-108](gtlogs-helper.py#L90-L108)
 
 #### File Path Validation
@@ -548,7 +548,13 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.8.0 - Display S3 paths in upload summary
+**Current Version:** v1.8.1 - RDSC Jira prefix support
+
+**v1.8.1 (2026-03-15):**
+
+- Added `RDSC-` as valid Jira ID prefix alongside `RED-` and `MOD-`
+- Updated all validation, detection, and parsing logic for RDSC support
+- Updated interactive prompts and CLI help text
 
 **v1.8.0 (2026-01-20):**
 

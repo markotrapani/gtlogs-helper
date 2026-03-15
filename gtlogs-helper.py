@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.8.0"
+VERSION = "1.8.1"
 
 import argparse
 import configparser
@@ -659,22 +659,22 @@ class GTLogsHelper:
 
     @staticmethod
     def validate_jira_id(jira_id):
-        """Validate and format Jira ID - must be RED-# or MOD-# with numerical suffix."""
-        # Check if it matches RED-# or MOD-# format
+        """Validate and format Jira ID - must be RED-#, MOD-#, or RDSC-# with numerical suffix."""
+        # Check if it matches RED-#, MOD-#, or RDSC-# format
         jira_id = jira_id.upper().strip()
 
         # If it's just a number, we need to know the prefix
         if jira_id.isdigit():
-            raise ValueError("Jira ID must include prefix (RED- or MOD-)")
+            raise ValueError("Jira ID must include prefix (RED-, MOD-, or RDSC-)")
 
         # Add hyphen if missing (e.g., RED172041 -> RED-172041)
-        match = re.match(r'^(RED|MOD)(\d+)$', jira_id)
+        match = re.match(r'^(RED|MOD|RDSC)(\d+)$', jira_id)
         if match:
             return f"{match.group(1)}-{match.group(2)}"
 
-        # Validate full format - must be RED-# or MOD-# with numerical suffix only
-        if not re.match(r'^(RED|MOD)-\d+$', jira_id):
-            raise ValueError("Invalid Jira ID: must be in format RED-# or MOD-# with numerical suffix (e.g., RED-172041 or MOD-12345)")
+        # Validate full format - must be RED-#, MOD-#, or RDSC-# with numerical suffix only
+        if not re.match(r'^(RED|MOD|RDSC)-\d+$', jira_id):
+            raise ValueError("Invalid Jira ID: must be in format RED-#, MOD-#, or RDSC-# with numerical suffix (e.g., RED-172041, MOD-12345, or RDSC-4841)")
 
         return jira_id
 
@@ -1532,7 +1532,7 @@ class GTLogsHelper:
             }
 
         # Check for combined ZD+Jira ID
-        if "-RED-" in decoded.upper() or "-MOD-" in decoded.upper():
+        if "-RED-" in decoded.upper() or "-MOD-" in decoded.upper() or "-RDSC-" in decoded.upper():
             return {
                 'format': 'combined_id',
                 'description': 'Combined Zendesk + Jira ID',
@@ -1587,7 +1587,7 @@ class GTLogsHelper:
         #   https://jira.redis.com/browse/RED-172041
         #   https://jira.company.com/browse/MOD-12345
         #   https://company.atlassian.net/browse/RED-99999
-        jira_pattern = r'/browse/(RED|MOD)-(\d+)'
+        jira_pattern = r'/browse/(RED|MOD|RDSC)-(\d+)'
         match = re.search(jira_pattern, url, re.IGNORECASE)
         if match:
             prefix = match.group(1).upper()
@@ -1613,9 +1613,9 @@ class GTLogsHelper:
             if jira_id:
                 return jira_id
 
-        # Check for Jira ID format (RED-#### or MOD-####)
+        # Check for Jira ID format (RED-####, MOD-####, or RDSC-####)
         # But NOT combined format (ZD-####-RED-#### or ####-RED-####)
-        jira_pattern = r'^(RED|MOD)-\d+$'
+        jira_pattern = r'^(RED|MOD|RDSC)-\d+$'
         match = re.search(jira_pattern, cleaned, re.IGNORECASE)
         if match:
             # Validate it's a proper Jira ID
@@ -1664,10 +1664,10 @@ class GTLogsHelper:
 
         # Handle partial paths (ZD-only or ZD+Jira)
         # Check if it contains combined ZD+Jira format first
-        if "-RED-" in s3_path.upper() or "-MOD-" in s3_path.upper():
+        if "-RED-" in s3_path.upper() or "-MOD-" in s3_path.upper() or "-RDSC-" in s3_path.upper():
             try:
                 # Extract Jira part
-                jira_match = re.search(r'(RED|MOD)-\d+', s3_path.upper())
+                jira_match = re.search(r'(RED|MOD|RDSC)-\d+', s3_path.upper())
                 if jira_match:
                     jira_id = jira_match.group()
                     # Extract ZD part (everything before the Jira ID)
@@ -2318,7 +2318,7 @@ def interactive_upload_mode(debug=False):
         jira_formatted = None
         while True:
             jira_history = generator.get_history('jira_id')
-            jira_input = input_with_esc_detection("Enter Jira ID or URL (e.g., RED-172041, MOD-12345, or https://jira.../browse/RED-172041, press Enter to skip): ", jira_history).strip()
+            jira_input = input_with_esc_detection("Enter Jira ID or URL (e.g., RED-172041, MOD-12345, RDSC-4841, or https://jira.../browse/RED-172041, press Enter to skip): ", jira_history).strip()
             check_exit_input(jira_input)
             if not jira_input:
                 print("\n✓ No Jira ID - will use zendesk-tickets path\n")
@@ -2835,7 +2835,7 @@ def interactive_download_mode(debug=False):
                             print(f"✓ Found {len(data)} alternative path(s):\n")
                             for i, path in enumerate(data, 1):
                                 # Extract Jira ID from path for display
-                                jira_match = re.search(r'(RED|MOD)-\d+', path)
+                                jira_match = re.search(r'(RED|MOD|RDSC)-\d+', path)
                                 jira_id = jira_match.group(0) if jira_match else "Unknown"
                                 print(f"  {i}. {jira_id}: s3://gt-logs/{path}")
 
@@ -3122,7 +3122,7 @@ Examples:
     parser.add_argument('zendesk_id', nargs='?',
                        help='Zendesk ticket ID (e.g., 145980 or ZD-145980)')
     parser.add_argument('jira_id', nargs='?',
-                       help='Jira ticket ID (optional, e.g., RED-172041 or MOD-12345)')
+                       help='Jira ticket ID (optional, e.g., RED-172041, MOD-12345, or RDSC-4841)')
     parser.add_argument('-f', '--file', dest='support_package', action='append',
                        help='Path to support package file (can be used multiple times for batch uploads)')
     parser.add_argument('-p', '--profile', dest='aws_profile',
@@ -3336,7 +3336,7 @@ Examples:
                             print(f"❌ Multiple alternative paths found for {zd_id}:")
                             for i, path in enumerate(data, 1):
                                 # Extract Jira ID from path for display
-                                jira_match = re.search(r'(RED|MOD)-\d+', path)
+                                jira_match = re.search(r'(RED|MOD|RDSC)-\d+', path)
                                 jira_id = jira_match.group(0) if jira_match else "Unknown"
                                 print(f"  {i}. {jira_id}: s3://gt-logs/{path}")
                             print("\nPlease specify the full S3 path or use interactive mode (-i)")
