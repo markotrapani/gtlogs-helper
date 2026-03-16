@@ -548,7 +548,14 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.8.1 - RDSC Jira prefix support
+**Current Version:** v1.9.0 - Interactive directory file selection
+
+**v1.9.0 (2026-03-15):**
+
+- Interactive directory file selection in upload mode
+- Provide a directory path to list all files with sizes
+- All files included by default, exclude by number
+- Fixed retry bug: "Try again?" after invalid file now re-prompts correctly
 
 **v1.8.1 (2026-03-15):**
 

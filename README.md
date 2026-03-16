@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.8.1 |
+**Current Version:** v1.9.0 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -384,6 +384,14 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.9.0 - Interactive Directory File Selection
+
+- 📂 **Directory upload from interactive mode** - Provide a directory path and
+  get an interactive file listing with sizes; all files included by default,
+  exclude specific files by number
+- 🐛 **Fixed retry bug** - "Try again?" prompt after invalid file path now
+  correctly re-prompts instead of skipping to AWS profile step
 
 ### v1.8.1 - RDSC Jira Prefix Support
 

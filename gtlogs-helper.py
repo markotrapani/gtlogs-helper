@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.8.1"
+VERSION = "1.9.0"
 
 import argparse
 import configparser
@@ -1986,6 +1986,44 @@ class GTLogsHelper:
             return f'aws s3 cp "s3://{bucket}/{key}" "{local_path}" --profile {aws_profile}'
 
 
+def _list_directory_files(dir_path):
+    """List all files in a directory recursively, sorted by relative path.
+
+    Args:
+        dir_path: Absolute path to the directory
+
+    Returns:
+        List of tuples: (relative_path, absolute_path, file_size_bytes)
+    """
+    files = []
+    for root, _dirs, filenames in os.walk(dir_path):
+        for filename in filenames:
+            # Skip hidden files
+            if filename.startswith('.'):
+                continue
+            full_path = os.path.join(root, filename)
+            rel_path = os.path.relpath(full_path, dir_path)
+            try:
+                size = os.path.getsize(full_path)
+            except OSError:
+                size = 0
+            files.append((rel_path, full_path, size))
+    files.sort(key=lambda x: x[0])
+    return files
+
+
+def _format_file_size(size_bytes):
+    """Format file size in human-readable form."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    else:
+        return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+
 def getch_timeout(timeout=None, fd=None, restore_settings=True):
     """Read a single character from stdin without waiting for Enter.
 
@@ -2348,9 +2386,9 @@ def interactive_upload_mode(debug=False):
         while True:
             path_history = generator.get_history('file_path')
             if not package_paths:
-                prompt = "Enter support package path(s) (comma-separated for multiple, press Enter to skip): "
+                prompt = "Enter support package path(s) (comma-separated, or a directory path, press Enter to skip): "
             else:
-                prompt = f"Add another file? (press Enter to continue with {len(package_paths)} file(s)): "
+                prompt = f"Add another file/directory? (press Enter to continue with {len(package_paths)} file(s)): "
 
             package_path = input_with_esc_detection(prompt, path_history).strip()
             check_exit_input(package_path)
@@ -2365,9 +2403,68 @@ def interactive_upload_mode(debug=False):
             # Split by comma for multiple paths
             paths_to_validate = [p.strip() for p in package_path.split(',')]
 
+            should_retry = False
+            should_skip = False
             for path in paths_to_validate:
                 if not path:
                     continue
+
+                # Expand user paths like ~/
+                expanded_path = os.path.expanduser(path)
+
+                # Check if path is a directory - offer interactive file selection
+                if os.path.isdir(expanded_path):
+                    dir_files = _list_directory_files(expanded_path)
+                    if not dir_files:
+                        print(f"❌ Directory is empty: {path}")
+                        continue
+
+                    print(f"\n📂 Found {len(dir_files)} file(s) in {path}:\n")
+                    for i, (rel_path, full_path, size) in enumerate(dir_files, 1):
+                        size_str = _format_file_size(size)
+                        print(f"  {i}. {rel_path} ({size_str})")
+
+                    print(f"\nAll {len(dir_files)} files are selected by default.")
+                    exclude_input = input_with_esc_detection(
+                        "Enter file number(s) to EXCLUDE (comma-separated), or press Enter to include all: "
+                    ).strip()
+                    check_exit_input(exclude_input)
+
+                    # Parse exclusions
+                    exclude_indices = set()
+                    if exclude_input:
+                        for part in exclude_input.split(','):
+                            part = part.strip()
+                            if part.isdigit():
+                                idx = int(part)
+                                if 1 <= idx <= len(dir_files):
+                                    exclude_indices.add(idx)
+                                else:
+                                    print(f"⚠️  Ignoring invalid number: {part}")
+                            else:
+                                print(f"⚠️  Ignoring invalid input: {part}")
+
+                    # Add selected files
+                    added_count = 0
+                    for i, (rel_path, full_path, size) in enumerate(dir_files, 1):
+                        if i in exclude_indices:
+                            print(f"  ✗ Excluded: {rel_path}")
+                            continue
+                        if full_path not in package_paths:
+                            package_paths.append(full_path)
+                            added_count += 1
+                            generator.add_to_history('file_path', full_path)
+                        else:
+                            print(f"  ⚠️  Skipping duplicate: {rel_path}")
+
+                    if added_count > 0:
+                        print(f"\n✓ Added {added_count} file(s) from directory ({len(exclude_indices)} excluded)")
+                    else:
+                        print("\n⚠️  No files added from directory")
+                    # Add directory to history for convenience
+                    generator.add_to_history('file_path', expanded_path)
+                    continue
+
                 try:
                     validated_path = generator.validate_file_path(path)
                     if validated_path not in package_paths:  # Avoid duplicates
@@ -2381,18 +2478,19 @@ def interactive_upload_mode(debug=False):
                     print(f"❌ {e}")
                     retry = input_with_esc_detection("Try again? (y/n): ").strip().lower()
                     check_exit_input(retry)
-                    if retry not in ['y', 'yes']:
-                        if not package_paths:
-                            print("✓ Skipping file path, will generate template command\n")
+                    if retry in ['y', 'yes']:
+                        should_retry = True
                         break
-                    print()
-                    break  # Break inner loop to retry the same input
-            else:
-                # If we processed all paths successfully, ask for more
-                continue
+                    else:
+                        should_skip = True
+                        break
 
-            # If retry was 'n', break outer loop
-            if not package_paths:
+            if should_retry:
+                print()
+                continue  # Re-prompt in the outer while loop
+
+            if should_skip and not package_paths:
+                print("✓ Skipping file path, will generate template command\n")
                 break
 
         # Convert to None if empty list for backward compatibility
