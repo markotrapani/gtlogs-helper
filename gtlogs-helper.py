@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.9.1"
+VERSION = "1.9.2"
 
 import argparse
 import configparser
@@ -2134,26 +2134,42 @@ def _interactive_file_selector(items, dir_path):
             ch = sys.stdin.read(1)
 
             if ch == '\x1b':  # ESC or escape sequence
-                import select as _sel
-                ready = _sel.select([sys.stdin], [], [], 0.05)
-                if ready[0]:
-                    seq1 = sys.stdin.read(1)
-                    if seq1 == '[':
-                        seq2 = sys.stdin.read(1)
-                        if seq2 == 'A':  # Up arrow
-                            if cursor > 0:
-                                cursor -= 1
-                                if cursor < scroll_offset:
-                                    scroll_offset = cursor
-                        elif seq2 == 'B':  # Down arrow
-                            if cursor < len(items) - 1:
-                                cursor += 1
-                                if cursor >= scroll_offset + max_visible:
-                                    scroll_offset = cursor - max_visible + 1
-                else:
-                    # Standalone ESC - cancel
+                # Use termios VTIME for reliable escape sequence detection
+                # (select-based approach fails in Warp terminal)
+                tty_attr = termios.tcgetattr(fd)
+                tty_attr[6][termios.VTIME] = 2  # 0.2 second timeout
+                tty_attr[6][termios.VMIN] = 0   # Return immediately if no data
+                termios.tcsetattr(fd, termios.TCSANOW, tty_attr)
+
+                seq1 = sys.stdin.read(1)
+                tty.setraw(fd)  # Restore raw mode
+
+                if seq1 and (seq1 == '[' or seq1 == 'O'):
+                    # Read final character of escape sequence
+                    tty_attr = termios.tcgetattr(fd)
+                    tty_attr[6][termios.VTIME] = 2
+                    tty_attr[6][termios.VMIN] = 0
+                    termios.tcsetattr(fd, termios.TCSANOW, tty_attr)
+
+                    seq2 = sys.stdin.read(1)
+                    tty.setraw(fd)
+
+                    if seq2 == 'A':  # Up arrow
+                        if cursor > 0:
+                            cursor -= 1
+                            if cursor < scroll_offset:
+                                scroll_offset = cursor
+                    elif seq2 == 'B':  # Down arrow
+                        if cursor < len(items) - 1:
+                            cursor += 1
+                            if cursor >= scroll_offset + max_visible:
+                                scroll_offset = cursor - max_visible + 1
+                    # Ignore other escape sequences (left/right, etc.)
+                elif not seq1:
+                    # Timeout - standalone ESC, cancel
                     _clear_selector(total_lines())
                     return None
+                # else: unknown escape sequence, ignore
 
             elif ch == ' ':  # Space - toggle selection
                 selected[cursor] = not selected[cursor]
