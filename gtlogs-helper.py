@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.9.3"
+VERSION = "1.9.4"
 
 import argparse
 import configparser
@@ -2690,11 +2690,22 @@ def interactive_upload_mode(debug=False):
         # Get Zendesk ID
         while True:
             zd_history = generator.get_history('zendesk_id')
-            zd_input = input_with_esc_detection("Enter Zendesk ticket ID (e.g., 145980): ", zd_history).strip()
+            zd_input = input_with_esc_detection("Enter Zendesk ticket ID or URL (e.g., 145980 or https://redislabs.zendesk.com/agent/tickets/145980): ", zd_history).strip()
             check_exit_input(zd_input)
             if not zd_input:
                 print("❌ Zendesk ID is required\n")
                 continue
+
+            # Check if input is a Zendesk URL
+            if 'zendesk.com' in zd_input.lower():
+                zd_from_url = generator.extract_ticket_id_from_url(zd_input)
+                if zd_from_url:
+                    print(f"\n✓ Extracted from URL: {zd_from_url}")
+                    zd_input = zd_from_url
+                else:
+                    print(f"❌ Could not extract ticket ID from URL: {zd_input}\n")
+                    continue
+
             try:
                 zd_formatted = generator.validate_zendesk_id(zd_input)
                 print(f"\n✓ Using: {zd_formatted}\n")
