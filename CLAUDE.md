@@ -548,7 +548,11 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.9.0 - Interactive directory file selection
+**Current Version:** v1.9.1 - Interactive directory file selection
+
+**v1.9.1 (2026-03-15):**
+
+- Re-release of v1.9.0 due to GitHub CDN caching from reused tag
 
 **v1.9.0 (2026-03-15):**
 

@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.9.0 |
+**Current Version:** v1.9.1 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
