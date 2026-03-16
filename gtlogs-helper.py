@@ -1986,32 +1986,6 @@ class GTLogsHelper:
             return f'aws s3 cp "s3://{bucket}/{key}" "{local_path}" --profile {aws_profile}'
 
 
-def _list_directory_files(dir_path):
-    """List all files in a directory recursively, sorted by relative path.
-
-    Args:
-        dir_path: Absolute path to the directory
-
-    Returns:
-        List of tuples: (relative_path, absolute_path, file_size_bytes)
-    """
-    files = []
-    for root, _dirs, filenames in os.walk(dir_path):
-        for filename in filenames:
-            # Skip hidden files
-            if filename.startswith('.'):
-                continue
-            full_path = os.path.join(root, filename)
-            rel_path = os.path.relpath(full_path, dir_path)
-            try:
-                size = os.path.getsize(full_path)
-            except OSError:
-                size = 0
-            files.append((rel_path, full_path, size))
-    files.sort(key=lambda x: x[0])
-    return files
-
-
 def _format_file_size(size_bytes):
     """Format file size in human-readable form."""
     if size_bytes < 1024:
@@ -2022,6 +1996,313 @@ def _format_file_size(size_bytes):
         return f"{size_bytes / (1024 * 1024):.1f} MB"
     else:
         return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+
+def _list_directory_top_level(dir_path):
+    """List top-level items in a directory (files and subdirectories).
+
+    Subdirectories are represented as single items with aggregated file count
+    and total size. Files are listed individually.
+
+    Args:
+        dir_path: Absolute path to the directory
+
+    Returns:
+        List of dicts with keys:
+            - name: Display name (e.g., 'file.tar.gz' or 'subdir/')
+            - is_dir: Whether this is a directory
+            - size: Total size in bytes
+            - file_count: Number of files (1 for files, N for directories)
+            - files: List of absolute paths to all files this entry represents
+    """
+    items = []
+    try:
+        entries = sorted(os.listdir(dir_path))
+    except OSError:
+        return items
+
+    for entry in entries:
+        # Skip hidden files/dirs
+        if entry.startswith('.'):
+            continue
+        full_path = os.path.join(dir_path, entry)
+
+        if os.path.isdir(full_path):
+            # Aggregate directory contents
+            total_size = 0
+            file_list = []
+            for root, _dirs, filenames in os.walk(full_path):
+                for fname in filenames:
+                    if fname.startswith('.'):
+                        continue
+                    fpath = os.path.join(root, fname)
+                    try:
+                        total_size += os.path.getsize(fpath)
+                    except OSError:
+                        pass
+                    file_list.append(fpath)
+            if file_list:  # Only show non-empty directories
+                items.append({
+                    'name': entry + '/',
+                    'is_dir': True,
+                    'size': total_size,
+                    'file_count': len(file_list),
+                    'files': file_list,
+                })
+        elif os.path.isfile(full_path):
+            try:
+                size = os.path.getsize(full_path)
+            except OSError:
+                size = 0
+            items.append({
+                'name': entry,
+                'is_dir': False,
+                'size': size,
+                'file_count': 1,
+                'files': [full_path],
+            })
+
+    return items
+
+
+# ANSI color codes
+_ANSI_RESET = '\033[0m'
+_ANSI_BOLD = '\033[1m'
+_ANSI_DIM = '\033[2m'
+_ANSI_REVERSE = '\033[7m'
+_ANSI_CYAN = '\033[36m'
+_ANSI_GREEN = '\033[32m'
+_ANSI_WHITE = '\033[37m'
+_ANSI_YELLOW = '\033[33m'
+_ANSI_CLEAR_LINE = '\033[K'
+_ANSI_HIDE_CURSOR = '\033[?25l'
+_ANSI_SHOW_CURSOR = '\033[?25h'
+
+
+def _interactive_file_selector(items, dir_path):
+    """Interactive file/directory selector with arrow key navigation.
+
+    Displays a scrollable list where the user can navigate with arrow keys
+    and toggle selection with Space. All items are selected by default.
+
+    Args:
+        items: List of dicts from _list_directory_top_level()
+        dir_path: The directory path (for display purposes)
+
+    Returns:
+        List of absolute file paths for all selected items,
+        or None if the user cancelled (ESC).
+    """
+    if not IMMEDIATE_INPUT_AVAILABLE or not sys.stdin.isatty():
+        # Fallback: non-interactive mode
+        return _fallback_file_selector(items, dir_path)
+
+    selected = [True] * len(items)
+    cursor = 0
+    # Determine how many items fit on screen (leave room for header/footer)
+    try:
+        term_height = os.get_terminal_size().lines
+    except (AttributeError, ValueError, OSError):
+        term_height = 24
+    max_visible = min(len(items), term_height - 7)  # header + footer lines
+    scroll_offset = 0
+    first_draw = True
+
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    def draw():
+        nonlocal first_draw
+        _draw_selector(items, selected, cursor, scroll_offset, max_visible, dir_path, first_draw)
+        first_draw = False
+
+    def total_lines():
+        """Calculate total lines rendered by the selector."""
+        visible_end = min(scroll_offset + max_visible, len(items))
+        remaining_below = len(items) - visible_end
+        # 3 header + items + scroll_below_or_blank + 2 footer
+        return 3 + (visible_end - scroll_offset) + 1 + 2
+
+    try:
+        tty.setraw(fd)
+        sys.stdout.write(_ANSI_HIDE_CURSOR)
+        sys.stdout.flush()
+
+        draw()
+
+        while True:
+            ch = sys.stdin.read(1)
+
+            if ch == '\x1b':  # ESC or escape sequence
+                import select as _sel
+                ready = _sel.select([sys.stdin], [], [], 0.05)
+                if ready[0]:
+                    seq1 = sys.stdin.read(1)
+                    if seq1 == '[':
+                        seq2 = sys.stdin.read(1)
+                        if seq2 == 'A':  # Up arrow
+                            if cursor > 0:
+                                cursor -= 1
+                                if cursor < scroll_offset:
+                                    scroll_offset = cursor
+                        elif seq2 == 'B':  # Down arrow
+                            if cursor < len(items) - 1:
+                                cursor += 1
+                                if cursor >= scroll_offset + max_visible:
+                                    scroll_offset = cursor - max_visible + 1
+                else:
+                    # Standalone ESC - cancel
+                    _clear_selector(total_lines())
+                    return None
+
+            elif ch == ' ':  # Space - toggle selection
+                selected[cursor] = not selected[cursor]
+
+            elif ch == '\r' or ch == '\n':  # Enter - confirm
+                break
+
+            elif ch == 'a':  # Select all
+                selected = [True] * len(items)
+
+            elif ch == 'n':  # Deselect all
+                selected = [False] * len(items)
+
+            elif ch == '\x03':  # Ctrl+C
+                _clear_selector(total_lines())
+                return None
+
+            else:
+                continue
+
+            draw()
+
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+        sys.stdout.write(_ANSI_SHOW_CURSOR)
+        sys.stdout.flush()
+
+    # Clear the selector display and print summary
+    _clear_selector(total_lines())
+
+    # Collect selected files
+    selected_files = []
+    for i, item in enumerate(items):
+        if selected[i]:
+            selected_files.extend(item['files'])
+
+    return selected_files
+
+
+def _draw_selector(items, selected, cursor, scroll_offset, max_visible, dir_path, first_draw=False):
+    """Draw the interactive selector display."""
+    total_selected = sum(1 for s in selected if s)
+    total_files = sum(item['file_count'] for i, item in enumerate(items) if selected[i])
+    total_size = sum(item['size'] for i, item in enumerate(items) if selected[i])
+
+    output = []
+
+    # Header
+    output.append(f'{_ANSI_CLEAR_LINE}{_ANSI_BOLD}📂 {dir_path}{_ANSI_RESET}')
+    output.append(f'{_ANSI_CLEAR_LINE}{_ANSI_DIM}Use ↑↓ navigate, Space toggle, Enter confirm, a=all, n=none, Esc=cancel{_ANSI_RESET}')
+    output.append(f'{_ANSI_CLEAR_LINE}')
+
+    # Items
+    visible_end = min(scroll_offset + max_visible, len(items))
+    for i in range(scroll_offset, visible_end):
+        item = items[i]
+        is_current = (i == cursor)
+        is_selected = selected[i]
+
+        # Checkbox
+        if is_selected:
+            checkbox = f'{_ANSI_GREEN}[✓]{_ANSI_RESET}'
+        else:
+            checkbox = f'{_ANSI_DIM}[ ]{_ANSI_RESET}'
+
+        # Item name with color
+        if item['is_dir']:
+            name_color = _ANSI_CYAN + _ANSI_BOLD
+            size_info = f'{item["file_count"]} files, {_format_file_size(item["size"])}'
+            display_name = f'{name_color}{item["name"]}{_ANSI_RESET} {_ANSI_DIM}({size_info}){_ANSI_RESET}'
+        else:
+            name_color = _ANSI_WHITE
+            display_name = f'{name_color}{item["name"]}{_ANSI_RESET} {_ANSI_DIM}({_format_file_size(item["size"])}){_ANSI_RESET}'
+
+        # Highlight current line
+        if is_current:
+            line = f'{_ANSI_CLEAR_LINE}  {_ANSI_REVERSE} {checkbox} {display_name} {_ANSI_RESET}'
+        else:
+            line = f'{_ANSI_CLEAR_LINE}  {checkbox} {display_name}'
+
+        output.append(line)
+
+    # Scroll indicator or blank line
+    remaining_below = len(items) - visible_end
+    if remaining_below > 0:
+        output.append(f'{_ANSI_CLEAR_LINE}  {_ANSI_DIM}↓ {remaining_below} more below{_ANSI_RESET}')
+    else:
+        output.append(f'{_ANSI_CLEAR_LINE}')
+
+    # Scroll-up indicator (replace first item line if scrolled)
+    if scroll_offset > 0:
+        output[3] = f'{_ANSI_CLEAR_LINE}  {_ANSI_DIM}↑ {scroll_offset} more above{_ANSI_RESET}'
+
+    # Footer
+    output.append(f'{_ANSI_CLEAR_LINE}')
+    output.append(f'{_ANSI_CLEAR_LINE}{_ANSI_BOLD}Selected: {total_selected}/{len(items)} items ({total_files} files, {_format_file_size(total_size)}){_ANSI_RESET}')
+
+    rendered = '\r\n'.join(output)
+
+    if not first_draw:
+        # Move cursor up to overwrite previous draw
+        num_lines = len(output) - 1  # -1 because first line starts at current position
+        sys.stdout.write(f'\r\033[{num_lines}A')
+
+    sys.stdout.write(rendered)
+    sys.stdout.flush()
+
+
+def _clear_selector(num_lines):
+    """Clear the selector display from the terminal."""
+    # Move to start of selector and clear each line
+    sys.stdout.write(f'\r\033[{num_lines - 1}A')
+    for _ in range(num_lines):
+        sys.stdout.write(f'{_ANSI_CLEAR_LINE}\n')
+    # Move back up to where selector started
+    sys.stdout.write(f'\033[{num_lines}A\r')
+    sys.stdout.flush()
+
+
+def _fallback_file_selector(items, dir_path):
+    """Non-interactive fallback for directory file selection.
+
+    Used when terminal raw mode is unavailable (e.g., Windows, piped input).
+    """
+    print(f"\n📂 Contents of {dir_path}:\n")
+    for i, item in enumerate(items, 1):
+        if item['is_dir']:
+            print(f"  {_ANSI_CYAN}{i}. {item['name']}{_ANSI_RESET} ({item['file_count']} files, {_format_file_size(item['size'])})")
+        else:
+            print(f"  {i}. {item['name']} ({_format_file_size(item['size'])})")
+
+    print(f"\nAll {len(items)} items are selected by default.")
+    exclude_input = input("Enter item number(s) to EXCLUDE (comma-separated), or press Enter to include all: ").strip()
+
+    exclude_indices = set()
+    if exclude_input:
+        for part in exclude_input.split(','):
+            part = part.strip()
+            if part.isdigit():
+                idx = int(part)
+                if 1 <= idx <= len(items):
+                    exclude_indices.add(idx)
+
+    selected_files = []
+    for i, item in enumerate(items, 1):
+        if i not in exclude_indices:
+            selected_files.extend(item['files'])
+
+    return selected_files
 
 
 def getch_timeout(timeout=None, fd=None, restore_settings=True):
@@ -2414,53 +2695,34 @@ def interactive_upload_mode(debug=False):
 
                 # Check if path is a directory - offer interactive file selection
                 if os.path.isdir(expanded_path):
-                    dir_files = _list_directory_files(expanded_path)
-                    if not dir_files:
+                    dir_items = _list_directory_top_level(expanded_path)
+                    if not dir_items:
                         print(f"❌ Directory is empty: {path}")
                         continue
 
-                    print(f"\n📂 Found {len(dir_files)} file(s) in {path}:\n")
-                    for i, (rel_path, full_path, size) in enumerate(dir_files, 1):
-                        size_str = _format_file_size(size)
-                        print(f"  {i}. {rel_path} ({size_str})")
+                    # Print a blank line before selector takes over
+                    print()
+                    selected_files = _interactive_file_selector(dir_items, path)
 
-                    print(f"\nAll {len(dir_files)} files are selected by default.")
-                    exclude_input = input_with_esc_detection(
-                        "Enter file number(s) to EXCLUDE (comma-separated), or press Enter to include all: "
-                    ).strip()
-                    check_exit_input(exclude_input)
+                    if selected_files is None:
+                        # User cancelled with ESC
+                        print("⚠️  Directory selection cancelled")
+                        continue
 
-                    # Parse exclusions
-                    exclude_indices = set()
-                    if exclude_input:
-                        for part in exclude_input.split(','):
-                            part = part.strip()
-                            if part.isdigit():
-                                idx = int(part)
-                                if 1 <= idx <= len(dir_files):
-                                    exclude_indices.add(idx)
-                                else:
-                                    print(f"⚠️  Ignoring invalid number: {part}")
-                            else:
-                                print(f"⚠️  Ignoring invalid input: {part}")
-
-                    # Add selected files
+                    # Add selected files, skip duplicates
                     added_count = 0
-                    for i, (rel_path, full_path, size) in enumerate(dir_files, 1):
-                        if i in exclude_indices:
-                            print(f"  ✗ Excluded: {rel_path}")
-                            continue
-                        if full_path not in package_paths:
-                            package_paths.append(full_path)
+                    for fpath in selected_files:
+                        if fpath not in package_paths:
+                            package_paths.append(fpath)
                             added_count += 1
-                            generator.add_to_history('file_path', full_path)
-                        else:
-                            print(f"  ⚠️  Skipping duplicate: {rel_path}")
+                            generator.add_to_history('file_path', fpath)
 
                     if added_count > 0:
-                        print(f"\n✓ Added {added_count} file(s) from directory ({len(exclude_indices)} excluded)")
+                        excluded = sum(item['file_count'] for item in dir_items) - len(selected_files)
+                        print(f"✓ Added {added_count} file(s) from directory" +
+                              (f" ({excluded} excluded)" if excluded > 0 else ""))
                     else:
-                        print("\n⚠️  No files added from directory")
+                        print("⚠️  No files added from directory")
                     # Add directory to history for convenience
                     generator.add_to_history('file_path', expanded_path)
                     continue

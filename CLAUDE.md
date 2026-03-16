@@ -552,9 +552,10 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 **v1.9.0 (2026-03-15):**
 
-- Interactive directory file selection in upload mode
-- Provide a directory path to list all files with sizes
-- All files included by default, exclude by number
+- Interactive directory file selector with arrow key navigation and Space toggle
+- Color-coded: directories in cyan (with file count/size), files in white
+- Subdirectories collapsed into single selectable items (not flat file list)
+- Keyboard: Space=toggle, a=all, n=none, Enter=confirm, Esc=cancel
 - Fixed retry bug: "Try again?" after invalid file now re-prompts correctly
 
 **v1.8.1 (2026-03-15):**

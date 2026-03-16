@@ -387,9 +387,15 @@ python3 tests/test_suite.py
 
 ### v1.9.0 - Interactive Directory File Selection
 
-- 📂 **Directory upload from interactive mode** - Provide a directory path and
-  get an interactive file listing with sizes; all files included by default,
-  exclude specific files by number
+- 📂 **Interactive directory selector** - Provide a directory path and get a
+  full-screen interactive selector with arrow key navigation and Space to
+  toggle selection
+- 🎨 **Color-coded display** - Directories shown in cyan with file count and
+  total size; files shown in white with individual size
+- 📁 **Smart grouping** - Subdirectories collapsed into single selectable items
+  instead of listing every nested file individually
+- ✅ **All selected by default** - Press Space to deselect, `a` for all,
+  `n` for none, Enter to confirm, Esc to cancel
 - 🐛 **Fixed retry bug** - "Try again?" prompt after invalid file path now
   correctly re-prompts instead of skipping to AWS profile step
 
