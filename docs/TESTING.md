@@ -1,14 +1,14 @@
 # GT Logs Helper - Testing Documentation
 
-**Current Version:** v1.5.1
-**Last Updated:** 2025-11-14
+**Current Version:** v1.9.4
+**Last Updated:** 2026-03-15
 **Test Status:** Automated tests passing (16/16) ✅ | Manual tests passing ✅
 
 ---
 
 ## Overview
 
-This document covers comprehensive testing for GT Logs Helper v1.5.1, including:
+This document covers comprehensive testing for GT Logs Helper v1.9.4, including:
 
 - **Lightning-fast UX** (v1.5.x) - Auto-submit prompts and smart defaults
 - **Enhanced terminal experience** (v1.4.x) - Cursor positioning and exit handling

@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.9.1 |
+**Current Version:** v1.9.4 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -384,6 +384,25 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.9.4 - Zendesk URL Support in Upload Mode
+
+- 🔗 **Zendesk URL support** - Paste full Zendesk URLs directly into the upload
+  mode ticket prompt (e.g., `https://redislabs.zendesk.com/agent/tickets/157834`)
+
+### v1.9.3 - Cursor Navigation in Text Input
+
+- ⬅️➡️ **Left/right arrow keys** - Move cursor within text to edit anywhere
+- 📋 **Multi-line paste fix** - Backspace correctly crosses line boundaries
+  when pasted text wraps
+- ⌨️ **Home/End keys** - Jump to start/end (also Ctrl+A/Ctrl+E)
+- 🗑️ **Delete key** - Remove character at cursor position
+- ✂️ **Ctrl+K** - Kill text from cursor to end of line
+
+### v1.9.2 - Arrow Key Fix for Warp Terminal
+
+- 🐛 **Warp terminal fix** - Fixed arrow keys immediately cancelling the
+  directory file selector by using termios VTIME instead of select()
 
 ### v1.9.0 - Interactive Directory File Selection
 

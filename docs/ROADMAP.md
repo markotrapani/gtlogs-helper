@@ -3,9 +3,46 @@
 This document outlines the development roadmap and feature priorities for
 GT Logs Helper.
 
-## Current Version: v1.7.2
+## Current Version: v1.9.4
 
 ### Recently Completed
+
+#### v1.9.4 - Zendesk URL Support in Upload Mode
+
+- ✅ **Zendesk URL support** - Paste full Zendesk URLs in upload ticket prompt
+
+#### v1.9.3 - Cursor Navigation in Text Input
+
+- ✅ **Left/right arrow keys** - Move cursor within text to edit anywhere
+- ✅ **Multi-line paste fix** - Backspace crosses line boundaries correctly
+- ✅ **Home/End, Delete, Ctrl+A/E/K** - Full keyboard editing support
+
+#### v1.9.2 - Warp Terminal Fix
+
+- ✅ **Arrow key fix** - Fixed directory selector cancelling on arrow keys in Warp
+
+#### v1.9.0 - Interactive Directory File Selection
+
+- ✅ **Interactive selector** - Arrow key navigation with Space to toggle
+- ✅ **Color-coded display** - Directories in cyan, files in white
+- ✅ **Smart grouping** - Subdirectories collapsed into single items
+- ✅ **Fixed retry bug** - File path retry now re-prompts correctly
+
+#### v1.8.1 - RDSC Jira Prefix Support
+
+- ✅ **RDSC- prefix** - Added alongside RED- and MOD- for RDI issues
+
+#### v1.8.0 - Upload Summary with S3 Paths
+
+- ✅ **Full S3 paths in upload summary** - Easy copy/share after batch uploads
+
+#### v1.7.9 - Improved Download Selection UX
+
+- ✅ **Enter downloads all** - Default changed from cancel to download all
+
+#### v1.7.7 - Progress Bar Fix
+
+- ✅ **Fixed multi-line progress bar** - ANSI escape for in-place updates
 
 #### v1.7.2 - Progress Bar Display Fix
 

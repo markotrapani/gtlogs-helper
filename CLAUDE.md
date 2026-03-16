@@ -548,11 +548,26 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.9.1 - Interactive directory file selection
+**Current Version:** v1.9.4 - Zendesk URL support in upload mode
+
+**v1.9.4 (2026-03-15):**
+
+- Zendesk URL support in upload mode ticket prompt
+- Auto-extracts ticket ID from pasted Zendesk URLs
+
+**v1.9.3 (2026-03-15):**
+
+- Left/right arrow cursor navigation in text input
+- Multi-line paste backspace fix (crosses line boundaries)
+- Home/End, Delete, Ctrl+A/E/K keyboard shortcuts
+
+**v1.9.2 (2026-03-15):**
+
+- Fixed arrow keys in Warp terminal (termios VTIME instead of select)
 
 **v1.9.1 (2026-03-15):**
 
-- Re-release of v1.9.0 due to GitHub CDN caching from reused tag
+- Re-release of v1.9.0 (version bump for auto-updater detection)
 
 **v1.9.0 (2026-03-15):**
 
