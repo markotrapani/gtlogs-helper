@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.9.2"
+VERSION = "1.9.3"
 
 import argparse
 import configparser
@@ -2385,25 +2385,76 @@ def input_with_esc_detection(prompt: str, history_list: Optional[list] = None, a
 
     print(prompt, end='', flush=True)
     user_input = []
+    cursor_pos = 0  # Position within user_input for left/right navigation
     history_index = -1  # -1 means not navigating history, 0+ means index in history_list
 
     # Enter raw mode ONCE and stay in it for the entire input
     fd = sys.stdin.fileno()
     old_settings = termios.tcgetattr(fd)
 
-    def clear_line_from_prompt():
-        """Clear the current input line and reposition cursor after prompt."""
-        # Move cursor to start of line, clear line, reprint prompt
-        print('\r\033[K' + prompt, end='', flush=True)
+    # Calculate prompt length for multi-line redraw
+    # Strip ANSI codes from prompt to get visible length
+    visible_prompt = re.sub(r'\033\[[^m]*m', '', prompt)
+    prompt_len = len(visible_prompt)
 
-    def display_input():
-        """Display the current user_input."""
-        clear_line_from_prompt()
-        print(''.join(user_input), end='', flush=True)
+    def get_term_width():
+        """Get terminal width, with fallback."""
+        try:
+            return os.get_terminal_size().columns
+        except (AttributeError, ValueError, OSError):
+            return 80
+
+    def redraw_input():
+        """Redraw the full input line, handling multi-line wrapping correctly."""
+        term_width = get_term_width()
+        text = ''.join(user_input)
+
+        # Figure out which terminal line the cursor is currently on
+        # (relative to where the prompt starts) so we can move back up
+        cursor_text_before = visible_prompt + text[:cursor_pos]
+        current_line = len(cursor_text_before) // term_width
+
+        # Move up to the first line of the prompt
+        if current_line > 0:
+            sys.stdout.write(f'\033[{current_line}A')
+        sys.stdout.write('\r')
+
+        # Clear from here to end of screen and rewrite everything
+        sys.stdout.write('\033[J')  # Clear from cursor to end of screen
+        sys.stdout.write(prompt + text)
+
+        # Now position cursor at the correct spot
+        # Calculate where cursor should be
+        cursor_full_pos = prompt_len + cursor_pos
+        target_line = cursor_full_pos // term_width
+        target_col = cursor_full_pos % term_width
+
+        # Calculate where we are after writing everything
+        end_full_pos = prompt_len + len(text)
+        end_line = max(0, (end_full_pos - 1) // term_width) if end_full_pos > 0 else 0
+
+        # Move cursor from end position to target position
+        lines_up = end_line - target_line
+        if lines_up > 0:
+            sys.stdout.write(f'\033[{lines_up}A')
+
+        # Move to correct column
+        sys.stdout.write(f'\r\033[{target_col}C' if target_col > 0 else '\r')
+
+        sys.stdout.flush()
+
+    def _read_esc_seq_char():
+        """Read one character with VTIME timeout for escape sequence detection."""
+        tty_attr = termios.tcgetattr(fd)
+        tty_attr[6][termios.VTIME] = 2  # 0.2 second timeout
+        tty_attr[6][termios.VMIN] = 0
+        termios.tcsetattr(fd, termios.TCSANOW, tty_attr)
+        result_ch = sys.stdin.read(1)
+        tty.setraw(fd)
+        return result_ch
 
     try:
         tty.setraw(fd)
-        import select
 
         while True:
             # Read one character while in raw mode
@@ -2415,123 +2466,127 @@ def input_with_esc_detection(prompt: str, history_list: Optional[list] = None, a
 
             # ESC key pressed - check if it's a standalone ESC or part of an escape sequence
             if ch == '\x1b':
-                # Arrow keys send: ESC [ A/B/C/D (as 3 separate character events!)
-                # Use termios VTIME/VMIN to set a read timeout on the file descriptor
-                # This distinguishes standalone ESC from escape sequences
-
-                # Get current settings
-                tty_attr = termios.tcgetattr(fd)
-                # Set timeout: VTIME = 2 (0.2 seconds), VMIN = 0 (return immediately if no data)
-                # termios.tcgetattr returns: [iflag, oflag, cflag, lflag, ispeed, ospeed, cc]
-                # cc is index 6, VTIME and VMIN are accessed within cc
-                tty_attr[6][termios.VTIME] = 2  # 0.2 second timeout
-                tty_attr[6][termios.VMIN] = 0   # Don't wait for any characters
-                termios.tcsetattr(fd, termios.TCSANOW, tty_attr)
-
-                # Try to read the next character with timeout
-                next_ch = sys.stdin.read(1)
-
-                # Restore raw mode (VMIN=1, VTIME=0 for normal operation)
-                tty.setraw(fd)
+                next_ch = _read_esc_seq_char()
 
                 if next_ch:
-                    # Got another character - this is an escape sequence (arrow key, etc.)
+                    # Got another character - this is an escape sequence
                     if next_ch == '[' or next_ch == 'O':
-                        # Standard escape sequence - read the final character
-                        # Set timeout again for the final character
-                        tty_attr = termios.tcgetattr(fd)
-                        tty_attr[6][termios.VTIME] = 2
-                        tty_attr[6][termios.VMIN] = 0
-                        termios.tcsetattr(fd, termios.TCSANOW, tty_attr)
+                        final_ch = _read_esc_seq_char()
 
-                        final_ch = sys.stdin.read(1)
-
-                        # Restore raw mode
-                        tty.setraw(fd)
-
-                        # Handle arrow keys (if history is available)
-                        if history_list and final_ch in ('A', 'B'):
-                            if final_ch == 'A':  # Up arrow
-                                if history_index < len(history_list) - 1:
-                                    history_index += 1
-                                    user_input = list(history_list[history_index])
-                                    display_input()
-                            elif final_ch == 'B':  # Down arrow
+                        if final_ch == 'A':  # Up arrow - history
+                            if history_list and history_index < len(history_list) - 1:
+                                history_index += 1
+                                user_input = list(history_list[history_index])
+                                cursor_pos = len(user_input)
+                                redraw_input()
+                        elif final_ch == 'B':  # Down arrow - history
+                            if history_list:
                                 if history_index > 0:
                                     history_index -= 1
                                     user_input = list(history_list[history_index])
-                                    display_input()
+                                    cursor_pos = len(user_input)
+                                    redraw_input()
                                 elif history_index == 0:
-                                    # Move past most recent to empty input
                                     history_index = -1
                                     user_input = []
-                                    display_input()
-
-                        # Ignore other escape sequences (left/right arrows, etc.)
+                                    cursor_pos = 0
+                                    redraw_input()
+                        elif final_ch == 'C':  # Right arrow
+                            if cursor_pos < len(user_input):
+                                cursor_pos += 1
+                                redraw_input()
+                        elif final_ch == 'D':  # Left arrow
+                            if cursor_pos > 0:
+                                cursor_pos -= 1
+                                redraw_input()
+                        elif final_ch == 'H':  # Home
+                            cursor_pos = 0
+                            redraw_input()
+                        elif final_ch == 'F':  # End
+                            cursor_pos = len(user_input)
+                            redraw_input()
+                        elif final_ch == '3':  # Possible Delete key (ESC[3~)
+                            # Read the tilde
+                            tilde = _read_esc_seq_char()
+                            if tilde == '~' and cursor_pos < len(user_input):
+                                user_input.pop(cursor_pos)
+                                history_index = -1
+                                redraw_input()
+                        # Ignore other escape sequences
                         continue
                     else:
-                        # Unknown escape sequence, ignore it
                         continue
                 else:
-                    # Timeout - no more characters, this is a standalone ESC key press
-                    # Restore terminal settings BEFORE exiting
+                    # Timeout - standalone ESC key press
                     termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-                    # Use ANSI escape to clear line from cursor to end, then print exit message
                     print("\r\033[K")
-                    # Raise exception instead of sys.exit() to allow cleanup in calling code
                     raise UserExitException()
 
             # Backspace
             elif ch in ('\x7f', '\x08'):
-                if user_input:
-                    user_input.pop()
-                    # Reset history navigation when user edits
+                if cursor_pos > 0:
+                    user_input.pop(cursor_pos - 1)
+                    cursor_pos -= 1
                     history_index = -1
-                    # Erase character from terminal
-                    print('\b \b', end='', flush=True)
+                    redraw_input()
 
             # Enter key
             elif ch in ('\r', '\n'):
-                # Explicitly output carriage return + newline for proper cursor positioning in raw mode
+                # Move cursor to end of input before newline
+                if cursor_pos < len(user_input):
+                    cursor_pos = len(user_input)
+                    redraw_input()
                 sys.stdout.write('\r\n')
                 sys.stdout.flush()
                 result = ''.join(user_input)
-                # Check for exit commands
                 if result.lower() in ['exit', 'quit', 'q']:
                     raise UserExitException()
                 return result
 
             # Ctrl+C
             elif ch == '\x03':
-                # Explicitly output carriage return + newline for proper cursor positioning in raw mode
                 sys.stdout.write('\r\n')
                 sys.stdout.flush()
                 raise KeyboardInterrupt
 
             # Ctrl+U (update check)
             elif ch == '\x15':
-                # Explicitly output carriage return + newline for proper cursor positioning in raw mode
                 sys.stdout.write('\r\n')
                 sys.stdout.flush()
                 raise UpdateCheckException()
 
+            # Ctrl+A (Home)
+            elif ch == '\x01':
+                cursor_pos = 0
+                redraw_input()
+
+            # Ctrl+E (End)
+            elif ch == '\x05':
+                cursor_pos = len(user_input)
+                redraw_input()
+
+            # Ctrl+K (Kill to end of line)
+            elif ch == '\x0b':
+                user_input = user_input[:cursor_pos]
+                history_index = -1
+                redraw_input()
+
             # Regular printable characters
             elif ch.isprintable():
-                # Reset history navigation when user types
                 history_index = -1
-                user_input.append(ch)
-                print(ch, end='', flush=True)
+                user_input.insert(cursor_pos, ch)
+                cursor_pos += 1
 
                 # Auto-submit if character is in auto_submit_chars
                 if auto_submit_chars and ch.lower() in auto_submit_chars:
-                    # Output newline and return immediately
                     sys.stdout.write('\r\n')
                     sys.stdout.flush()
                     result = ''.join(user_input)
-                    # Check for exit commands
                     if result.lower() in ['exit', 'quit', 'q']:
                         raise UserExitException()
                     return result
+
+                redraw_input()
 
     finally:
         # Always restore terminal settings
