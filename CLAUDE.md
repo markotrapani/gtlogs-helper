@@ -548,7 +548,12 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.9.4 - Zendesk URL support in upload mode
+**Current Version:** v1.9.6 - Spaces in file paths fix
+
+**v1.9.6 (2026-03-24):**
+
+- Quote file paths in AWS CLI commands for spaces support
+- Handle backslash-escaped spaces from drag-and-drop paths
 
 **v1.9.4 (2026-03-15):**
 

@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.9.4 |
+**Current Version:** v1.9.6 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -384,6 +384,13 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.9.6 - Spaces in File Paths Fix
+
+- 🐛 **Quoted AWS CLI commands** - Files with spaces in their names (e.g.,
+  `RDI Perf test Mar 24.txt`) now upload correctly to S3
+- 🐛 **Drag-and-drop path fix** - Backslash-escaped spaces from terminal
+  drag-and-drop (`file\ name.txt`) are stripped before validation
 
 ### v1.9.4 - Zendesk URL Support in Upload Mode
 
