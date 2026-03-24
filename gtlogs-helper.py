@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.9.5"
+VERSION = "1.9.6"
 
 import argparse
 import configparser
@@ -845,7 +845,7 @@ class GTLogsHelper:
             package_name = package_path.name
             s3_full_path = f"{s3_base_path}{package_name}"
 
-            cmd = f"aws s3 cp {validated_path} {s3_full_path}"
+            cmd = f'aws s3 cp "{validated_path}" "{s3_full_path}"'
         else:
             s3_full_path = f"{s3_base_path}<support_package_name>"
             cmd = f"aws s3 cp <support_package_path> {s3_full_path}"
@@ -1122,13 +1122,18 @@ class GTLogsHelper:
         try:
             # Extract filename for display
             filename = "file"
-            if " -f " in aws_command or ".tar.gz" in aws_command or ".zip" in aws_command:
-                parts = aws_command.split()
-                for i, part in enumerate(parts):
-                    if part == "cp" and i + 1 < len(parts):
-                        filepath = parts[i + 1]
-                        filename = os.path.basename(filepath.strip('"'))
-                        break
+            # Parse quoted path after 'cp ' to handle spaces in filenames
+            cp_idx = aws_command.find(' cp ')
+            if cp_idx >= 0:
+                after_cp = aws_command[cp_idx + 4:].strip()
+                if after_cp.startswith('"'):
+                    end_quote = after_cp.find('"', 1)
+                    if end_quote > 0:
+                        filepath = after_cp[1:end_quote]
+                        filename = os.path.basename(filepath)
+                else:
+                    filepath = after_cp.split()[0] if after_cp else ""
+                    filename = os.path.basename(filepath)
 
             print(f"\n📤 Uploading: {filename}")
             print(f"   Command: {aws_command}\n")
