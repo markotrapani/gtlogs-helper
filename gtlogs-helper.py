@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.9.4"
+VERSION = "1.9.5"
 
 import argparse
 import configparser
@@ -696,6 +696,9 @@ class GTLogsHelper:
         if not file_path:
             return None
 
+        # Strip shell-style backslash escapes (e.g. "RDI\ Perf\ test.txt" → "RDI Perf test.txt")
+        file_path = file_path.replace('\\ ', ' ')
+
         # Expand user paths like ~/
         expanded_path = os.path.expanduser(file_path)
 
@@ -734,6 +737,9 @@ class GTLogsHelper:
         dir_path = str(dir_path).strip()
         if not dir_path:
             return None
+
+        # Strip shell-style backslash escapes (e.g. "My\ Dir" → "My Dir")
+        dir_path = dir_path.replace('\\ ', ' ')
 
         # Expand user paths like ~/
         expanded_path = os.path.expanduser(dir_path)
@@ -2772,7 +2778,8 @@ def interactive_upload_mode(debug=False):
                 if not path:
                     continue
 
-                # Expand user paths like ~/
+                # Strip shell-style backslash escapes and expand user paths
+                path = path.replace('\\ ', ' ')
                 expanded_path = os.path.expanduser(path)
 
                 # Check if path is a directory - offer interactive file selection
