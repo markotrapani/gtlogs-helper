@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/marko.trapani/Downloads/marko-projects/gtlogs-helper.wiki push origin master)"
+    ]
+  }
+}
