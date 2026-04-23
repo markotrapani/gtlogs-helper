@@ -371,8 +371,10 @@ class TestRunner:
             download_dir = "/tmp/gtlogs_test_downloads"
             os.makedirs(download_dir, exist_ok=True)
 
-            # Mode 2 (download), ticket ID, default profile, 'a' for all, download directory
-            stdin_input = f"2\nZD-145980\n\na\n{download_dir}\n"
+            # Mode 2 (download), ticket ID, default profile, 'y' (confirm alt path
+            # if primary path is empty - harmless input if primary path has files
+            # and we're prompted for file selection first), 'a' for all, download directory
+            stdin_input = f"2\nZD-145980\n\ny\na\n{download_dir}\n"
 
             returncode, stdout, stderr = self.run_command(
                 ['-i'],

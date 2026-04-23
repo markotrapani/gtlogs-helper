@@ -485,6 +485,9 @@ class GTLogsHelper:
     def add_to_history(self, field_name, value):
         """Add a validated value to history for a specific field.
 
+        Persists to disk immediately so history survives any exit path,
+        including crashes and non-graceful terminations.
+
         Args:
             field_name: One of 'zendesk_id', 'jira_id', 'file_path', 'aws_profile'
             value: The validated value to add
@@ -501,6 +504,9 @@ class GTLogsHelper:
 
         # Limit history size
         self.history[field_name] = self.history[field_name][:self.MAX_HISTORY_ENTRIES]
+
+        # Persist immediately
+        self._save_history()
 
     def get_history(self, field_name):
         """Get history list for a specific field.
@@ -2697,292 +2703,349 @@ def interactive_upload_mode(debug=False):
     print("Upload Mode - Generate S3 URLs and upload files")
     print("-"*50 + "\n")
 
+    # Ticket/profile context - preserved across continuation-loop iterations.
+    # When the user opts to upload more files to the same ticket, these stay
+    # set and the ZD/Jira/profile prompts are skipped.
+    zd_formatted = None
+    jira_formatted = None
+    aws_profile = None
+    ticket_context_set = False  # True after first successful ZD collection
+
     try:
-        # Get Zendesk ID
-        while True:
-            zd_history = generator.get_history('zendesk_id')
-            zd_input = input_with_esc_detection("Enter Zendesk ticket ID or URL (e.g., 145980 or https://redislabs.zendesk.com/agent/tickets/145980): ", zd_history).strip()
-            check_exit_input(zd_input)
-            if not zd_input:
-                print("❌ Zendesk ID is required\n")
-                continue
-
-            # Check if input is a Zendesk URL
-            if 'zendesk.com' in zd_input.lower():
-                zd_from_url = generator.extract_ticket_id_from_url(zd_input)
-                if zd_from_url:
-                    print(f"\n✓ Extracted from URL: {zd_from_url}")
-                    zd_input = zd_from_url
-                else:
-                    print(f"❌ Could not extract ticket ID from URL: {zd_input}\n")
+        while True:  # Outer continuation loop
+            # Get Zendesk ID (skip if reusing ticket context from previous iteration)
+            while not ticket_context_set:
+                zd_history = generator.get_history('zendesk_id')
+                zd_input = input_with_esc_detection("Enter Zendesk ticket ID or URL (e.g., 145980 or https://redislabs.zendesk.com/agent/tickets/145980): ", zd_history).strip()
+                check_exit_input(zd_input)
+                if not zd_input:
+                    print("❌ Zendesk ID is required\n")
                     continue
 
-            try:
-                zd_formatted = generator.validate_zendesk_id(zd_input)
-                print(f"\n✓ Using: {zd_formatted}\n")
-                # Add to history immediately after validation
-                generator.add_to_history('zendesk_id', zd_formatted)
-                break
-            except ValueError as e:
-                print(f"❌ {e}\n")
-
-        # Get Jira ID (optional)
-        jira_formatted = None
-        while True:
-            jira_history = generator.get_history('jira_id')
-            jira_input = input_with_esc_detection("Enter Jira ID or URL (e.g., RED-172041, MOD-12345, RDSC-4841, or https://jira.../browse/RED-172041, press Enter to skip): ", jira_history).strip()
-            check_exit_input(jira_input)
-            if not jira_input:
-                print("\n✓ No Jira ID - will use zendesk-tickets path\n")
-                break
-
-            # Check if input is a Jira URL
-            if "/browse/" in jira_input.lower():
-                jira_from_url = generator.extract_jira_id_from_url(jira_input)
-                if jira_from_url:
-                    print(f"\n✓ Extracted from URL: {jira_from_url}")
-                    jira_input = jira_from_url
-                else:
-                    print(f"❌ Could not extract Jira ID from URL: {jira_input}\n")
-                    continue
-
-            try:
-                jira_formatted = generator.validate_jira_id(jira_input)
-                print(f"\n✓ Using: {jira_formatted}\n")
-                # Add to history immediately after validation
-                generator.add_to_history('jira_id', jira_formatted)
-                break
-            except ValueError as e:
-                print(f"❌ {e}\n")
-
-        # Get support package path(s) (optional)
-        package_paths = []
-        while True:
-            path_history = generator.get_history('file_path')
-            if not package_paths:
-                prompt = "Enter support package path(s) (comma-separated, or a directory path, press Enter to skip): "
-            else:
-                prompt = f"Add another file/directory? (press Enter to continue with {len(package_paths)} file(s)): "
-
-            package_path = input_with_esc_detection(prompt, path_history).strip()
-            check_exit_input(package_path)
-
-            if not package_path:
-                if not package_paths:
-                    print("\n✓ Will generate template command\n")
-                else:
-                    print(f"\n✓ Proceeding with {len(package_paths)} file(s)\n")
-                break
-
-            # Split by comma for multiple paths
-            paths_to_validate = [p.strip() for p in package_path.split(',')]
-
-            should_retry = False
-            should_skip = False
-            for path in paths_to_validate:
-                if not path:
-                    continue
-
-                # Strip shell-style backslash escapes and expand user paths
-                path = path.replace('\\ ', ' ')
-                expanded_path = os.path.expanduser(path)
-
-                # Check if path is a directory - offer interactive file selection
-                if os.path.isdir(expanded_path):
-                    dir_items = _list_directory_top_level(expanded_path)
-                    if not dir_items:
-                        print(f"❌ Directory is empty: {path}")
-                        continue
-
-                    # Print a blank line before selector takes over
-                    print()
-                    selected_files = _interactive_file_selector(dir_items, path)
-
-                    if selected_files is None:
-                        # User cancelled with ESC
-                        print("⚠️  Directory selection cancelled")
-                        continue
-
-                    # Add selected files, skip duplicates
-                    added_count = 0
-                    for fpath in selected_files:
-                        if fpath not in package_paths:
-                            package_paths.append(fpath)
-                            added_count += 1
-                            generator.add_to_history('file_path', fpath)
-
-                    if added_count > 0:
-                        excluded = sum(item['file_count'] for item in dir_items) - len(selected_files)
-                        print(f"✓ Added {added_count} file(s) from directory" +
-                              (f" ({excluded} excluded)" if excluded > 0 else ""))
+                # Check if input is a Zendesk URL
+                if 'zendesk.com' in zd_input.lower():
+                    zd_from_url = generator.extract_ticket_id_from_url(zd_input)
+                    if zd_from_url:
+                        print(f"\n✓ Extracted from URL: {zd_from_url}")
+                        zd_input = zd_from_url
                     else:
-                        print("⚠️  No files added from directory")
-                    # Add directory to history for convenience
-                    generator.add_to_history('file_path', expanded_path)
-                    continue
+                        print(f"❌ Could not extract ticket ID from URL: {zd_input}\n")
+                        continue
 
                 try:
-                    validated_path = generator.validate_file_path(path)
-                    if validated_path not in package_paths:  # Avoid duplicates
-                        package_paths.append(validated_path)
-                        print(f"✓ File {len(package_paths)}: {validated_path}")
-                        # Add to history immediately after validation
-                        generator.add_to_history('file_path', validated_path)
-                    else:
-                        print(f"⚠️  Skipping duplicate: {validated_path}")
+                    zd_formatted = generator.validate_zendesk_id(zd_input)
+                    print(f"\n✓ Using: {zd_formatted}\n")
+                    # Add to history immediately after validation
+                    generator.add_to_history('zendesk_id', zd_formatted)
+                    break
                 except ValueError as e:
-                    print(f"❌ {e}")
-                    retry = input_with_esc_detection("Try again? (y/n): ").strip().lower()
-                    check_exit_input(retry)
-                    if retry in ['y', 'yes']:
-                        should_retry = True
+                    print(f"❌ {e}\n")
+
+            # Get Jira ID (optional) - skip if reusing ticket context
+            if not ticket_context_set:
+                jira_formatted = None
+                while True:
+                    jira_history = generator.get_history('jira_id')
+                    jira_input = input_with_esc_detection("Enter Jira ID or URL (e.g., RED-172041, MOD-12345, RDSC-4841, or https://jira.../browse/RED-172041, press Enter to skip): ", jira_history).strip()
+                    check_exit_input(jira_input)
+                    if not jira_input:
+                        print("\n✓ No Jira ID - will use zendesk-tickets path\n")
                         break
-                    else:
-                        should_skip = True
+
+                    # Check if input is a Jira URL
+                    if "/browse/" in jira_input.lower():
+                        jira_from_url = generator.extract_jira_id_from_url(jira_input)
+                        if jira_from_url:
+                            print(f"\n✓ Extracted from URL: {jira_from_url}")
+                            jira_input = jira_from_url
+                        else:
+                            print(f"❌ Could not extract Jira ID from URL: {jira_input}\n")
+                            continue
+
+                    try:
+                        jira_formatted = generator.validate_jira_id(jira_input)
+                        print(f"\n✓ Using: {jira_formatted}\n")
+                        # Add to history immediately after validation
+                        generator.add_to_history('jira_id', jira_formatted)
                         break
+                    except ValueError as e:
+                        print(f"❌ {e}\n")
 
-            if should_retry:
-                print()
-                continue  # Re-prompt in the outer while loop
+            # Get support package path(s) - always prompt fresh, previous
+            # selections are cleared so directory-selected file lists don't leak
+            # between iterations.
+            package_paths = []
+            while True:
+                path_history = generator.get_history('file_path')
+                if not package_paths:
+                    prompt = "Enter support package path(s) (comma-separated, or a directory path, press Enter to skip): "
+                else:
+                    prompt = f"Add another file/directory? (press Enter to continue with {len(package_paths)} file(s)): "
 
-            if should_skip and not package_paths:
-                print("✓ Skipping file path, will generate template command\n")
-                break
+                package_path = input_with_esc_detection(prompt, path_history).strip()
+                check_exit_input(package_path)
 
-        # Convert to None if empty list for backward compatibility
-        package_path = package_paths if package_paths else None
-
-        # Get AWS profile
-        default_profile = generator.get_default_aws_profile()
-        if default_profile:
-            profile_prompt = f"Enter AWS profile (press Enter for default '{default_profile}'): "
-        else:
-            profile_prompt = "Enter AWS profile (optional, press Enter to skip): "
-
-        profile_history = generator.get_history('aws_profile')
-        aws_profile_input = input_with_esc_detection(profile_prompt, profile_history).strip()
-        check_exit_input(aws_profile_input)
-
-        if aws_profile_input:
-            aws_profile = aws_profile_input
-            # Add to history immediately
-            generator.add_to_history('aws_profile', aws_profile)
-            # Ask if they want to save as default
-            save_default = input_with_esc_detection(f"\nSave '{aws_profile}' as default profile? (y/n): ").strip().lower()
-            check_exit_input(save_default)
-            if save_default in ['y', 'yes']:
-                generator._save_config(aws_profile)
-                print()
-        elif default_profile:
-            aws_profile = default_profile
-            print(f"\n✓ Using default profile: {default_profile}\n")
-        else:
-            # Use gt-logs as fallback when no profile is configured
-            aws_profile = "gt-logs"
-            print("\n✓ Using default profile: gt-logs\n")
-
-        # Handle single vs multiple files
-        if package_path:
-            # We have file path(s)
-            if isinstance(package_path, list) and len(package_path) > 1:
-                # Multiple files - use batch upload
-                s3_path = generator.generate_s3_path(zd_formatted, jira_formatted)
-
-                # Display batch upload info
-                print("="*70)
-                print("Batch Upload Configuration")
-                print("="*70)
-                print(f"\nS3 Destination:\n  {s3_path}")
-                print(f"\nFiles to upload ({len(package_path)}):")
-                for i, fpath in enumerate(package_path, 1):
-                    print(f"  {i}. {os.path.basename(fpath)}")
-                print("\n" + "="*70)
-
-                # Offer to execute
-                print()
-                execute_now = input_with_esc_detection("Execute batch upload now? (Y/n): ").strip().lower()
-                check_exit_input(execute_now)
-
-                # Default to 'yes' if user just presses Enter
-                if execute_now == '' or execute_now in ['y', 'yes']:
-                    # Check authentication
-                    is_authenticated = generator.check_aws_authentication(aws_profile, debug=generator.debug)
-
-                    if not is_authenticated:
-                        print(f"\n⚠️  AWS profile '{aws_profile}' is not authenticated")
-                        # Automatically run AWS SSO login
-                        if not generator.aws_sso_login(aws_profile):
-                            print("❌ Cannot proceed without authentication\n")
-                            return 1
+                if not package_path:
+                    if not package_paths:
+                        print("\n✓ Will generate template command\n")
                     else:
-                        print(f"\n✓ AWS profile '{aws_profile}' is already authenticated\n")
+                        print(f"\n✓ Proceeding with {len(package_paths)} file(s)\n")
+                    break
 
-                    # Execute batch upload
-                    success_count, failure_count, _ = generator.execute_batch_upload(
-                        package_path, zd_formatted, jira_formatted, aws_profile
+                # Split by comma for multiple paths
+                paths_to_validate = [p.strip() for p in package_path.split(',')]
+
+                should_retry = False
+                should_skip = False
+                for path in paths_to_validate:
+                    if not path:
+                        continue
+
+                    # Strip shell-style backslash escapes and expand user paths
+                    path = path.replace('\\ ', ' ')
+                    expanded_path = os.path.expanduser(path)
+
+                    # Check if path is a directory - offer interactive file selection
+                    if os.path.isdir(expanded_path):
+                        dir_items = _list_directory_top_level(expanded_path)
+                        if not dir_items:
+                            print(f"❌ Directory is empty: {path}")
+                            continue
+
+                        # Print a blank line before selector takes over
+                        print()
+                        selected_files = _interactive_file_selector(dir_items, path)
+
+                        if selected_files is None:
+                            # User cancelled with ESC
+                            print("⚠️  Directory selection cancelled")
+                            continue
+
+                        # Add selected files, skip duplicates
+                        added_count = 0
+                        for fpath in selected_files:
+                            if fpath not in package_paths:
+                                package_paths.append(fpath)
+                                added_count += 1
+                                generator.add_to_history('file_path', fpath)
+
+                        if added_count > 0:
+                            excluded = sum(item['file_count'] for item in dir_items) - len(selected_files)
+                            print(f"✓ Added {added_count} file(s) from directory" +
+                                  (f" ({excluded} excluded)" if excluded > 0 else ""))
+                        else:
+                            print("⚠️  No files added from directory")
+                        # Add directory to history for convenience
+                        generator.add_to_history('file_path', expanded_path)
+                        continue
+
+                    try:
+                        validated_path = generator.validate_file_path(path)
+                        if validated_path not in package_paths:  # Avoid duplicates
+                            package_paths.append(validated_path)
+                            print(f"✓ File {len(package_paths)}: {validated_path}")
+                            # Add to history immediately after validation
+                            generator.add_to_history('file_path', validated_path)
+                        else:
+                            print(f"⚠️  Skipping duplicate: {validated_path}")
+                    except ValueError as e:
+                        print(f"❌ {e}")
+                        retry = input_with_esc_detection("Try again? (y/n): ").strip().lower()
+                        check_exit_input(retry)
+                        if retry in ['y', 'yes']:
+                            should_retry = True
+                            break
+                        else:
+                            should_skip = True
+                            break
+
+                if should_retry:
+                    print()
+                    continue  # Re-prompt in the outer while loop
+
+                if should_skip and not package_paths:
+                    print("✓ Skipping file path, will generate template command\n")
+                    break
+
+            # Convert to None if empty list for backward compatibility
+            package_path = package_paths if package_paths else None
+
+            # Get AWS profile (only on first iteration; reused on subsequent
+            # "upload more to same ticket" iterations)
+            if aws_profile is None:
+                default_profile = generator.get_default_aws_profile()
+                if default_profile:
+                    profile_prompt = f"Enter AWS profile (press Enter for default '{default_profile}'): "
+                else:
+                    profile_prompt = "Enter AWS profile (optional, press Enter to skip): "
+
+                profile_history = generator.get_history('aws_profile')
+                aws_profile_input = input_with_esc_detection(profile_prompt, profile_history).strip()
+                check_exit_input(aws_profile_input)
+
+                if aws_profile_input:
+                    aws_profile = aws_profile_input
+                    # Add to history immediately
+                    generator.add_to_history('aws_profile', aws_profile)
+                    # Ask if they want to save as default
+                    save_default = input_with_esc_detection(f"\nSave '{aws_profile}' as default profile? (y/n): ").strip().lower()
+                    check_exit_input(save_default)
+                    if save_default in ['y', 'yes']:
+                        generator._save_config(aws_profile)
+                        print()
+                elif default_profile:
+                    aws_profile = default_profile
+                    print(f"\n✓ Using default profile: {default_profile}\n")
+                else:
+                    # Use gt-logs as fallback when no profile is configured
+                    aws_profile = "gt-logs"
+                    print("\n✓ Using default profile: gt-logs\n")
+
+            # Ticket context is fully established after first full pass; future
+            # loop iterations skip ZD/Jira/profile prompts unless the user
+            # chooses to start a new upload.
+            ticket_context_set = True
+
+            # Handle single vs multiple files. Track whether an upload was
+            # attempted and whether it succeeded, so we can present the
+            # post-upload continuation prompt appropriately.
+            upload_attempted = False
+            upload_succeeded = False
+
+            if package_path:
+                # We have file path(s)
+                if isinstance(package_path, list) and len(package_path) > 1:
+                    # Multiple files - use batch upload
+                    s3_path = generator.generate_s3_path(zd_formatted, jira_formatted)
+
+                    # Display batch upload info
+                    print("="*70)
+                    print("Batch Upload Configuration")
+                    print("="*70)
+                    print(f"\nS3 Destination:\n  {s3_path}")
+                    print(f"\nFiles to upload ({len(package_path)}):")
+                    for i, fpath in enumerate(package_path, 1):
+                        print(f"  {i}. {os.path.basename(fpath)}")
+                    print("\n" + "="*70)
+
+                    # Offer to execute
+                    print()
+                    execute_now = input_with_esc_detection("Execute batch upload now? (Y/n): ").strip().lower()
+                    check_exit_input(execute_now)
+
+                    # Default to 'yes' if user just presses Enter
+                    if execute_now == '' or execute_now in ['y', 'yes']:
+                        # Check authentication
+                        is_authenticated = generator.check_aws_authentication(aws_profile, debug=generator.debug)
+
+                        if not is_authenticated:
+                            print(f"\n⚠️  AWS profile '{aws_profile}' is not authenticated")
+                            # Automatically run AWS SSO login
+                            if not generator.aws_sso_login(aws_profile):
+                                print("❌ Cannot proceed without authentication\n")
+                                return 1
+                        else:
+                            print(f"\n✓ AWS profile '{aws_profile}' is already authenticated\n")
+
+                        # Execute batch upload
+                        success_count, failure_count, _ = generator.execute_batch_upload(
+                            package_path, zd_formatted, jira_formatted, aws_profile
+                        )
+                        upload_attempted = True
+                        upload_succeeded = failure_count == 0
+                    else:
+                        print()
+                else:
+                    # Single file - use original logic
+                    single_path = package_path[0] if isinstance(package_path, list) else package_path
+                    cmd, s3_path = generator.generate_aws_command(
+                        zd_formatted,
+                        jira_formatted,  # Can be None for ZD-only uploads
+                        single_path,
+                        aws_profile
                     )
-                    return 0 if failure_count == 0 else 1
-                else:
+
+                    # Display results
+                    print("="*70)
+                    print("Generated Output")
+                    print("="*70)
+                    print(f"\nS3 Path:\n  {s3_path}")
+                    print(f"\nAWS CLI Command:\n  {cmd}")
+                    print("\n" + "="*70)
+
+                    # Offer to execute
                     print()
-            else:
-                # Single file - use original logic
-                single_path = package_path[0] if isinstance(package_path, list) else package_path
-                cmd, s3_path = generator.generate_aws_command(
-                    zd_input,
-                    jira_formatted,  # Can be None for ZD-only uploads
-                    single_path,
-                    aws_profile
-                )
+                    execute_now = input_with_esc_detection("Execute this command now? (Y/n): ").strip().lower()
+                    check_exit_input(execute_now)
 
-                # Display results
-                print("="*70)
-                print("Generated Output")
-                print("="*70)
-                print(f"\nS3 Path:\n  {s3_path}")
-                print(f"\nAWS CLI Command:\n  {cmd}")
-                print("\n" + "="*70)
+                    # Default to 'yes' if user just presses Enter
+                    if execute_now == '' or execute_now in ['y', 'yes']:
+                        # Check authentication
+                        is_authenticated = generator.check_aws_authentication(aws_profile, debug=generator.debug)
 
-                # Offer to execute
-                print()
-                execute_now = input_with_esc_detection("Execute this command now? (Y/n): ").strip().lower()
-                check_exit_input(execute_now)
+                        if not is_authenticated:
+                            print(f"\n⚠️  AWS profile '{aws_profile}' is not authenticated")
+                            # Automatically run AWS SSO login
+                            if not generator.aws_sso_login(aws_profile):
+                                print("❌ Cannot proceed without authentication\n")
+                                return 1
+                        else:
+                            print(f"\n✓ AWS profile '{aws_profile}' is already authenticated\n")
 
-                # Default to 'yes' if user just presses Enter
-                if execute_now == '' or execute_now in ['y', 'yes']:
-                    # Check authentication
-                    is_authenticated = generator.check_aws_authentication(aws_profile, debug=generator.debug)
-
-                    if not is_authenticated:
-                        print(f"\n⚠️  AWS profile '{aws_profile}' is not authenticated")
-                        # Automatically run AWS SSO login
-                        if not generator.aws_sso_login(aws_profile):
-                            print("❌ Cannot proceed without authentication\n")
-                            return 1
+                        # Execute the upload
+                        upload_succeeded = generator.execute_s3_upload(cmd)
+                        upload_attempted = True
                     else:
-                        print(f"\n✓ AWS profile '{aws_profile}' is already authenticated\n")
-
-                    # Execute the upload
-                    success = generator.execute_s3_upload(cmd)
-                    return 0 if success else 1
-                else:
-                    print()
-        else:
-            # Show AWS SSO login reminder if profile is specified (templated command)
-            if aws_profile:
-                print(f"\n💡 Reminder: Authenticate with AWS SSO before running the command:")
-                print(f"   aws sso login --profile {aws_profile}\n")
+                        print()
             else:
-                print(f"\n💡 Reminder: Authenticate with AWS SSO before running the command:")
-                print(f"   aws sso login --profile <your-aws-profile>\n")
+                # Show AWS SSO login reminder if profile is specified (templated command)
+                if aws_profile:
+                    print(f"\n💡 Reminder: Authenticate with AWS SSO before running the command:")
+                    print(f"   aws sso login --profile {aws_profile}\n")
+                else:
+                    print(f"\n💡 Reminder: Authenticate with AWS SSO before running the command:")
+                    print(f"   aws sso login --profile <your-aws-profile>\n")
+                # Template-only path: no upload executed, just exit
+                return 0
 
-        # Save history before exiting
-        generator._save_history()
-        return 0
+            # Post-upload continuation prompt
+            if upload_attempted:
+                if upload_succeeded:
+                    print()
+                    same_ticket_label = zd_formatted + (f"/{jira_formatted}" if jira_formatted else "")
+                    choice = input_with_esc_detection(
+                        "What would you like to do next?\n"
+                        f"  [1] Upload more files to the same ticket ({same_ticket_label})\n"
+                        "  [2] Start a new upload (different ticket)\n"
+                        "  [3] Exit\n"
+                        "Your choice: ",
+                        auto_submit_chars=['1', '2', '3']
+                    ).strip()
+                    check_exit_input(choice)
+
+                    if choice == '1':
+                        # Reuse ticket context; loop back to file collection
+                        print()
+                        continue
+                    elif choice == '2':
+                        # Reset ticket context so ZD/Jira/profile prompts run again
+                        zd_formatted = None
+                        jira_formatted = None
+                        aws_profile = None
+                        ticket_context_set = False
+                        print()
+                        continue
+                    else:
+                        return 0
+                else:
+                    # Upload failed - surface failure exit code
+                    return 1
+            else:
+                # User declined to execute; generated command is on-screen for later use
+                return 0
 
     except UserExitException:
         print("👋 Exiting...\n")
-        # Save history when user exits via ESC or exit command
-        generator._save_history()
         return 0
     except UpdateCheckException:
         print("🔍 Checking for updates...")
@@ -2991,7 +3054,6 @@ def interactive_upload_mode(debug=False):
             if prompt_for_update(update_info):
                 # Update was installed, need to restart to use new version
                 # Message already printed by perform_self_update()
-                generator._save_history()
                 return 0
             else:
                 # User chose 'n', return to interactive mode
@@ -3009,14 +3071,16 @@ def interactive_upload_mode(debug=False):
             return interactive_mode()
     except KeyboardInterrupt:
         print("\n\n👋 Exiting...\n")
-        # Save history even on Ctrl+C
-        generator._save_history()
         return 0
     except Exception as e:
         print(f"\n❌ Error: {e}\n", file=sys.stderr)
-        # Save history even on error
-        generator._save_history()
         return 1
+    finally:
+        # Belt-and-suspenders save covering any exit path. add_to_history
+        # already persists per-write, so this is typically a no-op, but it
+        # protects against edge cases (in-memory mutations that never hit
+        # add_to_history, etc.).
+        generator._save_history()
 
 
 def interactive_settings_mode(debug=False):
