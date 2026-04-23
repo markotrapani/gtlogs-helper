@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.9.6 |
+**Current Version:** v1.10.0 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -384,6 +384,21 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.10.0 - Post-Upload Continuation and Reliable History
+
+- 🔁 **Continue uploading without restarting** - After a successful upload in
+  interactive mode, choose to upload more files to the same ticket
+  (reusing ZD/Jira/AWS profile), start a fresh upload with a different ticket,
+  or exit. No more quitting and re-running the script for every batch.
+- 📝 **Per-write history persistence** - Input history now saves to disk
+  immediately after each validated entry, not just at exit. Up/down arrow
+  history in the ZD/Jira/file/profile prompts now reliably shows your previous
+  values across runs, including after crashes or uploads that previously
+  short-circuited the save step.
+- 🐛 **Same-ticket file-selection clears between iterations** - When choosing
+  "upload more files" after a successful upload, any previously-selected
+  directory file list is cleared so there's no carryover from the last run.
 
 ### v1.9.6 - Spaces in File Paths Fix
 
