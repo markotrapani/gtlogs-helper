@@ -36,13 +36,17 @@ authentication, batch operations, and intelligent path generation.
 ## Key Features
 
 - ⚡ **Lightning-fast UX** - Auto-submit prompts, smart defaults, instant feedback
-- 📤 **Upload Mode** - Generate S3 paths for ZD-only or ZD+Jira scenarios
-- 📥 **Download Mode** - List, select, and download files from S3
+- 📤 **Upload Mode** - Generate S3 paths, upload files, and get back
+  copy-pastable S3 URIs after each successful upload
+- 📥 **Download Mode** - List, select, and download files from S3, with
+  automatic file-vs-directory detection from the S3 path you paste
 - 🎯 **Jira-based Download** - Paste Jira URL or ID to auto-find support packages
 - 📂 **Smart Download Paths** - Auto-organize downloads into ZD ticket subfolders
 - 📁 **Directory Upload** - Upload entire directories with pattern filtering
   and dry-run mode
 - 🔄 **Batch Operations** - Upload/download multiple files simultaneously
+- 🔁 **Continuation Loops** - Upload or download repeatedly without
+  restarting; reuse ticket context or S3 location across iterations
 - 🔐 **Auto-Authentication** - Automatic AWS SSO login handling
 - 📝 **Input History** - Arrow key navigation through previous inputs
 - ⌨️ **Keyboard Controls** - ESC to exit, Ctrl+U to update, UP/DOWN for
