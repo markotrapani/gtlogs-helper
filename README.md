@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.11.0 |
+**Current Version:** v1.11.1 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -388,6 +388,14 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.11.1 - Quiet Download Probe
+
+- 🐛 **Silent file-vs-directory probe** - The probe that detects whether a
+  pasted S3 path is a directory or a file no longer prints
+  `❌ Error listing files:` when the prefix doesn't exist (the expected case
+  for single-file paths). `list_s3_files` now takes a `quiet=True` flag and
+  the probe uses it.
 
 ### v1.11.0 - Download UX and S3 Path Display
 

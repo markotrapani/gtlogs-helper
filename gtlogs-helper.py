@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.11.0"
+VERSION = "1.11.1"
 
 import argparse
 import configparser
@@ -1844,13 +1844,16 @@ class GTLogsHelper:
         except Exception as e:
             return "error", f"Error searching S3: {str(e)}"
 
-    def list_s3_files(self, bucket, prefix, aws_profile="gt-logs"):
+    def list_s3_files(self, bucket, prefix, aws_profile="gt-logs", quiet=False):
         """List files in an S3 bucket with given prefix.
 
         Args:
             bucket: S3 bucket name
             prefix: S3 key prefix
             aws_profile: AWS profile to use
+            quiet: Suppress error messages (e.g. when probing whether a key is
+                a directory — callers that don't care about the failure mode
+                want errors swallowed silently)
 
         Returns:
             list: List of file keys or empty list if error
@@ -1871,7 +1874,8 @@ class GTLogsHelper:
             )
 
             if result.returncode != 0:
-                print(f"❌ Error listing files: {result.stderr}")
+                if not quiet:
+                    print(f"❌ Error listing files: {result.stderr}")
                 return []
 
             # Parse the output to get file paths
@@ -1887,10 +1891,12 @@ class GTLogsHelper:
             return files
 
         except subprocess.TimeoutExpired:
-            print("❌ Timeout while listing S3 files")
+            if not quiet:
+                print("❌ Timeout while listing S3 files")
             return []
         except Exception as e:
-            print(f"❌ Error listing files: {e}")
+            if not quiet:
+                print(f"❌ Error listing files: {e}")
             return []
 
     def download_from_s3(self, bucket, key, local_path=None, aws_profile="gt-logs"):
@@ -3624,10 +3630,11 @@ def interactive_download_mode(debug=False):
             # Probe whether the key is a directory before asking save path.
             # If we get a non-empty listing, normalize key to end with "/" so
             # the directory branch handles it without a wasted file-download
-            # attempt and second prompt.
+            # attempt and second prompt. quiet=True so probe failures (which
+            # are expected for single-file paths) don't bleed error noise.
             probed_files = None
             if not key.endswith("/"):
-                probed_files = helper.list_s3_files(bucket, key + "/", aws_profile)
+                probed_files = helper.list_s3_files(bucket, key + "/", aws_profile, quiet=True)
                 if probed_files:
                     key = key + "/"
 

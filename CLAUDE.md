@@ -548,7 +548,12 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.11.0 - Download UX and S3 path display
+**Current Version:** v1.11.1 - Quiet download probe
+
+**v1.11.1 (2026-06-11):**
+
+- Silenced the v1.11.0 directory-vs-file probe so single-file downloads no longer surface an `❌ Error listing files:` line from the `aws s3 ls` call that was expected to come up empty
+- `list_s3_files` gains a `quiet=True` flag; download-mode probe call uses it
 
 **v1.11.0 (2026-06-11):**
 
