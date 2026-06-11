@@ -4,7 +4,7 @@ A lightning-fast command-line tool for uploading and downloading Redis Support
 packages to/from AWS S3. Streamline your workflow with automatic
 authentication, batch operations, and intelligent path generation.
 
-**Current Version:** v1.10.0 |
+**Current Version:** v1.11.0 |
 **[View Wiki](https://github.com/markotrapani/gtlogs-helper/wiki)** |
 **[Changelog](#whats-new)**
 
@@ -384,6 +384,30 @@ python3 tests/test_suite.py
 ---
 
 ## What's New
+
+### v1.11.0 - Download UX and S3 Path Display
+
+- 📁 **S3 URI after successful single-file upload** - The interactive
+  single-file upload now prints the full S3 destination URI on its own line
+  after `✅ Upload successful!`, so it's easy to copy/share. Batch and
+  directory uploads continue to list every uploaded file's URI in their
+  summary.
+- 🔁 **Post-download continuation prompt** - After a successful download in
+  interactive mode, choose to download more from the same S3 location
+  (re-lists the prefix; for single files, lists the parent directory's
+  siblings), start a new download with a different path, or exit. Mirrors
+  the upload continuation flow.
+- 🚦 **Directory-vs-file detection before save prompt** - When you paste an
+  S3 path without a trailing slash, the script now probes whether the prefix
+  is a directory before asking where to save. Eliminates the previous
+  flow where you'd be asked for a save path, the download would fail with a
+  404, and then you'd be asked for the local directory a second time.
+- 🧹 **Test suite no longer pollutes user config** - `tests/test_suite.py`
+  now snapshots `~/.gtlogs-config.ini` in `setup()` and restores it in
+  `cleanup()`. Previously, several phases (notably the smart-download-dir
+  tests) overwrote the live config and left their test paths behind, which
+  is how `download_dir` ended up pointing at
+  `/tmp/gtlogs_nonexistent_test_dir_12345` after running the suite.
 
 ### v1.10.0 - Post-Upload Continuation and Reliable History
 

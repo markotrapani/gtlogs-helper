@@ -548,7 +548,21 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.9.6 - Spaces in file paths fix
+**Current Version:** v1.11.0 - Download UX and S3 path display
+
+**v1.11.0 (2026-06-11):**
+
+- Full S3 URI printed after single-file upload success (batch/dir already showed it)
+- Post-download continuation prompt — download more from same location, new download, or exit
+- Probe directory-vs-file before asking save path (eliminates double-prompt on no-trailing-slash directory inputs)
+- `interactive_download_mode` refactored into helpers: `_prompt_for_download_s3_path`, `_run_directory_download`, `_run_single_file_download`, `_prompt_post_download_choice`, etc.
+- Test suite no longer pollutes `~/.gtlogs-config.ini` — `setup()` snapshots, `cleanup()` restores
+
+**v1.10.0 (2026-04-23):**
+
+- Post-upload continuation loop (upload more files to same ticket, start new upload, or exit)
+- Per-write history persistence — input history survives crashes/short-circuited save paths
+- Same-ticket file-selection list cleared between iterations
 
 **v1.9.6 (2026-03-24):**
 

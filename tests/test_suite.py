@@ -42,10 +42,42 @@ class TestRunner:
         self.passed = 0
         self.failed = 0
         self.test_number = 0
+        # Several phases call --set-download-dir / _save_download_dir against
+        # the real ~/.gtlogs-config.ini. Stash + restore it so tests don't leak
+        # state into the user's environment between runs.
+        self.config_path = os.path.expanduser("~/.gtlogs-config.ini")
+        self._config_backup_bytes: bytes | None = None
+        self._config_was_absent = False
+
+    def _backup_user_config(self):
+        """Snapshot the real user config so it can be restored after the run."""
+        if os.path.exists(self.config_path):
+            with open(self.config_path, 'rb') as f:
+                self._config_backup_bytes = f.read()
+            self._config_was_absent = False
+            print(f"  Backed up: {self.config_path}")
+        else:
+            self._config_backup_bytes = None
+            self._config_was_absent = True
+            print(f"  No existing config at {self.config_path} (will remove any created by tests)")
+
+    def _restore_user_config(self):
+        """Restore the snapshotted user config taken in setup()."""
+        if self._config_was_absent:
+            if os.path.exists(self.config_path):
+                os.remove(self.config_path)
+                print(f"  Removed test-created config: {self.config_path}")
+            return
+        if self._config_backup_bytes is not None:
+            with open(self.config_path, 'wb') as f:
+                f.write(self._config_backup_bytes)
+            print(f"  Restored: {self.config_path}")
 
     def setup(self):
         """Create test files and directory structure"""
         print(f"\n{TestColors.BLUE}Setting up test environment...{TestColors.RESET}")
+
+        self._backup_user_config()
 
         # Create test files in /tmp
         for i in range(1, 6):
@@ -95,6 +127,8 @@ class TestRunner:
             import shutil
             shutil.rmtree(self.test_dir)
             print(f"  Removed: {self.test_dir}/")
+
+        self._restore_user_config()
 
         print(f"{TestColors.GREEN}✓ Cleanup complete{TestColors.RESET}\n")
 

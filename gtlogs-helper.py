@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.10.0"
+VERSION = "1.11.0"
 
 import argparse
 import configparser
@@ -538,7 +538,7 @@ class GTLogsHelper:
 
         try:
             # Update timestamp
-            self.current_state['updated_at'] = datetime.utcnow().isoformat() + 'Z'
+            self.current_state['updated_at'] = datetime.now(timezone.utc).isoformat()
 
             with open(self.STATE_FILE, 'w') as f:
                 json.dump(self.current_state, f, indent=2)
@@ -565,7 +565,7 @@ class GTLogsHelper:
         Returns:
             State dictionary
         """
-        timestamp = datetime.utcnow().isoformat() + 'Z'
+        timestamp = datetime.now(timezone.utc).isoformat()
         session_id = f"{operation}_{destination.replace('s3://gt-logs/', '').replace('/', '_')}_{int(time.time())}"
 
         file_entries = []
@@ -1090,7 +1090,7 @@ class GTLogsHelper:
             max_retries = self.MAX_RETRIES
 
         for attempt in range(1, max_retries + 1):
-            success = self.execute_s3_upload(aws_command)
+            success = self.execute_s3_upload(aws_command, s3_path=s3_path)
 
             if success:
                 # Optionally verify upload
@@ -1119,8 +1119,12 @@ class GTLogsHelper:
         return False
 
     @staticmethod
-    def execute_s3_upload(aws_command):
+    def execute_s3_upload(aws_command, s3_path=None):
         """Execute the AWS S3 cp command with progress tracking.
+
+        Args:
+            aws_command: AWS CLI command to execute
+            s3_path: Optional full S3 destination URI to display after success
 
         Returns:
             True if successful, False otherwise
@@ -1185,7 +1189,10 @@ class GTLogsHelper:
             print()  # New line after progress bar
 
             if return_code == 0:
-                print("✅ Upload successful!\n")
+                print("✅ Upload successful!")
+                if s3_path:
+                    print(f"📁 {s3_path}")
+                print()
                 return True
             else:
                 print(f"❌ Upload failed with exit code {return_code}\n")
@@ -2048,7 +2055,7 @@ def _list_directory_top_level(dir_path):
             # Aggregate directory contents
             total_size = 0
             file_list = []
-            for root, _dirs, filenames in os.walk(full_path):
+            for root, _, filenames in os.walk(full_path):
                 for fname in filenames:
                     if fname.startswith('.'):
                         continue
@@ -2090,7 +2097,6 @@ _ANSI_REVERSE = '\033[7m'
 _ANSI_CYAN = '\033[36m'
 _ANSI_GREEN = '\033[32m'
 _ANSI_WHITE = '\033[37m'
-_ANSI_YELLOW = '\033[33m'
 _ANSI_CLEAR_LINE = '\033[K'
 _ANSI_HIDE_CURSOR = '\033[?25l'
 _ANSI_SHOW_CURSOR = '\033[?25h'
@@ -2136,7 +2142,6 @@ def _interactive_file_selector(items, dir_path):
     def total_lines():
         """Calculate total lines rendered by the selector."""
         visible_end = min(scroll_offset + max_visible, len(items))
-        remaining_below = len(items) - visible_end
         # 3 header + items + scroll_below_or_blank + 2 footer
         return 3 + (visible_end - scroll_offset) + 1 + 2
 
@@ -2609,9 +2614,6 @@ def input_with_esc_detection(prompt: str, history_list: Optional[list] = None, a
         # Always restore terminal settings
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
 
-    # Safety fallback (should never reach here as while loop always returns or raises)
-    return ""
-
 
 def check_exit_input(user_input):
     """Check if user wants to exit (exit commands only - ESC handled in input_with_esc_detection).
@@ -2693,6 +2695,30 @@ def interactive_mode(debug=False):
     except KeyboardInterrupt:
         print("\n\n👋 Exiting...\n")
         return 0
+
+
+def _prompt_post_upload_choice(zd_formatted, jira_formatted):
+    """Prompt the user for what to do after a successful upload.
+
+    Returns one of 'same' (reuse ticket context), 'new' (reset and start
+    over), or 'exit'.
+    """
+    same_ticket_label = zd_formatted + (f"/{jira_formatted}" if jira_formatted else "")
+    choice = input_with_esc_detection(
+        "What would you like to do next?\n"
+        f"  [1] Upload more files to the same ticket ({same_ticket_label})\n"
+        "  [2] Start a new upload (different ticket)\n"
+        "  [3] Exit\n"
+        "Your choice: ",
+        auto_submit_chars=['1', '2', '3']
+    ).strip()
+    check_exit_input(choice)
+
+    if choice == '1':
+        return 'same'
+    if choice == '2':
+        return 'new'
+    return 'exit'
 
 
 def interactive_upload_mode(debug=False):
@@ -2948,7 +2974,7 @@ def interactive_upload_mode(debug=False):
                             print(f"\n✓ AWS profile '{aws_profile}' is already authenticated\n")
 
                         # Execute batch upload
-                        success_count, failure_count, _ = generator.execute_batch_upload(
+                        _, failure_count, _ = generator.execute_batch_upload(
                             package_path, zd_formatted, jira_formatted, aws_profile
                         )
                         upload_attempted = True
@@ -2993,7 +3019,7 @@ def interactive_upload_mode(debug=False):
                             print(f"\n✓ AWS profile '{aws_profile}' is already authenticated\n")
 
                         # Execute the upload
-                        upload_succeeded = generator.execute_s3_upload(cmd)
+                        upload_succeeded = generator.execute_s3_upload(cmd, s3_path=s3_path)
                         upload_attempted = True
                     else:
                         print()
@@ -3009,40 +3035,29 @@ def interactive_upload_mode(debug=False):
                 return 0
 
             # Post-upload continuation prompt
-            if upload_attempted:
-                if upload_succeeded:
-                    print()
-                    same_ticket_label = zd_formatted + (f"/{jira_formatted}" if jira_formatted else "")
-                    choice = input_with_esc_detection(
-                        "What would you like to do next?\n"
-                        f"  [1] Upload more files to the same ticket ({same_ticket_label})\n"
-                        "  [2] Start a new upload (different ticket)\n"
-                        "  [3] Exit\n"
-                        "Your choice: ",
-                        auto_submit_chars=['1', '2', '3']
-                    ).strip()
-                    check_exit_input(choice)
-
-                    if choice == '1':
-                        # Reuse ticket context; loop back to file collection
-                        print()
-                        continue
-                    elif choice == '2':
-                        # Reset ticket context so ZD/Jira/profile prompts run again
-                        zd_formatted = None
-                        jira_formatted = None
-                        aws_profile = None
-                        ticket_context_set = False
-                        print()
-                        continue
-                    else:
-                        return 0
-                else:
-                    # Upload failed - surface failure exit code
-                    return 1
-            else:
+            if not upload_attempted:
                 # User declined to execute; generated command is on-screen for later use
                 return 0
+            if not upload_succeeded:
+                # Upload failed - surface failure exit code
+                return 1
+
+            print()
+            # ticket_context_set is True here, which guarantees the
+            # validation loop above set zd_formatted to a string.
+            assert zd_formatted is not None
+            action = _prompt_post_upload_choice(zd_formatted, jira_formatted)
+            if action == 'same':
+                print()
+                continue
+            if action == 'new':
+                zd_formatted = None
+                jira_formatted = None
+                aws_profile = None
+                ticket_context_set = False
+                print()
+                continue
+            return 0
 
     except UserExitException:
         print("👋 Exiting...\n")
@@ -3176,6 +3191,406 @@ def interactive_settings_mode(debug=False):
             print("❌ Invalid choice. Please enter 1/P, 2/D, or 3/B\n")
 
 
+def _resolve_jira_only_download_input(helper, jira_id):
+    """Resolve a Jira-only input to a concrete S3 input string.
+
+    Returns the s3:// URL on success, or None when the user should re-prompt
+    (cancel, not found, error, invalid selection).
+    """
+    print(f"\n🔍 Detected Jira ticket: {jira_id}")
+    print("Searching S3 for associated support packages...\n")
+
+    default_profile = helper.get_default_aws_profile()
+    search_profile = default_profile or "gt-logs"
+
+    status, data = helper.find_s3_path_by_jira_id(jira_id, search_profile)
+
+    if status == "found":
+        s3_input = f"s3://gt-logs/{data}"
+        print(f"✓ Found S3 path: {s3_input}\n")
+        return s3_input
+
+    if status == "multiple":
+        print(f"Found {len(data)} S3 paths for {jira_id}:\n")
+        for i, path in enumerate(data, 1):
+            zd_match = re.search(r'(ZD-\d+)', path)
+            zd_ticket = zd_match.group(1) if zd_match else "Unknown"
+            print(f"  {i}. {zd_ticket}: s3://gt-logs/{path}")
+
+        print()
+        choice = input_with_esc_detection("Select path number (or press Enter to cancel): ").strip()
+        check_exit_input(choice)
+
+        if not choice:
+            print("Cancelled\n")
+            return None
+        try:
+            idx = int(choice) - 1
+        except ValueError:
+            print("❌ Invalid selection\n")
+            return None
+        if 0 <= idx < len(data):
+            s3_input = f"s3://gt-logs/{data[idx]}"
+            print(f"\n✓ Selected: {s3_input}\n")
+            return s3_input
+        print("❌ Invalid selection\n")
+        return None
+
+    if status == "none":
+        print(f"❌ {data}")
+        print(f"   No support packages found for Jira ticket {jira_id}\n")
+        return None
+
+    # error
+    print(f"❌ {data}\n")
+    return None
+
+
+def _prompt_for_download_s3_path(helper):
+    """Prompt the user for an S3 path, ticket ID, or URL.
+
+    Returns (bucket, key) on success. Loops on invalid input. May raise
+    UserExitException via check_exit_input.
+    """
+    print("Enter S3 path to download from.")
+    print("Examples:")
+    print("  - Full path: s3://gt-logs/zendesk-tickets/ZD-145980/file.tar.gz")
+    print("  - Ticket ID: ZD-145980 (will list available files)")
+    print("  - Ticket + Jira: ZD-145980-RED-172041")
+    print("  - Zendesk URL: https://redislabs.zendesk.com/agent/tickets/150002")
+    print("  - Jira URL: https://redislabs.atlassian.net/browse/RED-177450")
+    print("  - Jira ID: RED-177450 (searches for associated support packages)")
+    print()
+
+    while True:
+        s3_history = helper.get_history('s3_path')
+        s3_input = input_with_esc_detection(
+            "Enter S3 path, ticket ID, Zendesk URL, or Jira URL: ", s3_history
+        ).strip()
+        check_exit_input(s3_input)
+
+        if not s3_input:
+            print("❌ S3 path or ticket ID is required\n")
+            continue
+
+        jira_id = GTLogsHelper.is_jira_only_input(s3_input)
+        if jira_id:
+            resolved = _resolve_jira_only_download_input(helper, jira_id)
+            if resolved is None:
+                continue
+            s3_input = resolved
+
+        bucket, key = helper.parse_s3_path(s3_input)
+        if not bucket or not key:
+            if "zendesk.com" in s3_input.lower():
+                print(f"❌ Invalid Zendesk URL: Could not extract ticket ID from {s3_input}\n")
+            else:
+                print(f"❌ Invalid S3 path or ticket ID: {s3_input}\n")
+            continue
+
+        helper.add_to_history('s3_path', s3_input)
+
+        if "zendesk.com" in s3_input.lower():
+            ticket_id = helper.extract_ticket_id_from_url(s3_input)
+            print(f"\n✓ Extracted ticket ID: ZD-{ticket_id}")
+
+        print(f"✓ Parsed: s3://{bucket}/{key}")
+        return bucket, key
+
+
+def _prompt_for_download_profile_and_auth(helper):
+    """Prompt for AWS profile and verify authentication.
+
+    Returns the profile name on success, or None on auth failure.
+    """
+    default_profile = helper.get_default_aws_profile()
+    if default_profile:
+        profile_prompt = f"Enter AWS profile (press Enter for default '{default_profile}'): "
+    else:
+        profile_prompt = "Enter AWS profile (default: gt-logs): "
+
+    profile_history = helper.get_history('aws_profile')
+    aws_profile_input = input_with_esc_detection(profile_prompt, profile_history).strip()
+    check_exit_input(aws_profile_input)
+
+    if aws_profile_input:
+        aws_profile = aws_profile_input
+        helper.add_to_history('aws_profile', aws_profile)
+    elif default_profile:
+        aws_profile = default_profile
+        print(f"\n✓ Using default profile: {default_profile}")
+    else:
+        aws_profile = "gt-logs"
+        print(f"\n✓ Using default profile: gt-logs")
+
+    print(f"\nChecking AWS authentication...")
+    is_authenticated = helper.check_aws_authentication(aws_profile, debug=helper.debug)
+
+    if not is_authenticated:
+        print(f"⚠️  AWS profile '{aws_profile}' is not authenticated")
+        if not helper.aws_sso_login(aws_profile):
+            print("❌ Cannot proceed without authentication\n")
+            return None
+    else:
+        print(f"✓ AWS profile '{aws_profile}' is authenticated")
+
+    return aws_profile
+
+
+def _try_zendesk_to_exa_fallback(helper, bucket, key, aws_profile):
+    """When a zendesk-tickets/ key is empty, offer to search exa-to-gt/.
+
+    Returns (bucket, key, files) — bucket/key may be updated if the user
+    accepts an alternative. files is the listing for the (possibly new) key.
+    """
+    if not key.startswith("zendesk-tickets/"):
+        return bucket, key, []
+
+    zd_match = re.search(r'(ZD-\d+)', key)
+    if not zd_match:
+        return bucket, key, []
+
+    zd_id = zd_match.group(1)
+    print(f"❌ No files found in s3://{bucket}/{key}")
+    print(f"🔍 Checking exa-to-gt/ for {zd_id} with Jira tickets...\n")
+
+    status, data = helper.find_s3_path_by_zendesk_id(zd_id, aws_profile)
+
+    if status == "found":
+        print(f"✓ Found alternative path: s3://gt-logs/{data}")
+        use_alt = input_with_esc_detection("Use this path instead? (Y/n): ").strip().lower()
+        check_exit_input(use_alt)
+        if use_alt == '' or use_alt in ['y', 'yes']:
+            bucket = "gt-logs"
+            key = data
+            print(f"\n🔍 Listing files in s3://{bucket}/{key}...\n")
+            return bucket, key, helper.list_s3_files(bucket, key, aws_profile)
+        return bucket, key, []
+
+    if status == "multiple":
+        print(f"✓ Found {len(data)} alternative path(s):\n")
+        for i, path in enumerate(data, 1):
+            jira_match = re.search(r'(RED|MOD|RDSC)-\d+', path)
+            jira_id = jira_match.group(0) if jira_match else "Unknown"
+            print(f"  {i}. {jira_id}: s3://gt-logs/{path}")
+
+        print()
+        choice = input_with_esc_detection("Select path number (or press Enter to cancel): ").strip()
+        check_exit_input(choice)
+        if not choice:
+            return bucket, key, []
+        try:
+            idx = int(choice) - 1
+        except ValueError:
+            print("❌ Invalid selection")
+            return bucket, key, []
+        if 0 <= idx < len(data):
+            bucket = "gt-logs"
+            key = data[idx]
+            print(f"\n🔍 Listing files in s3://{bucket}/{key}...\n")
+            return bucket, key, helper.list_s3_files(bucket, key, aws_profile)
+        print("❌ Invalid selection")
+        return bucket, key, []
+
+    print(f"❌ No files found in exa-to-gt/ for {zd_id}")
+    return bucket, key, []
+
+
+def _select_files_from_list(files):
+    """Prompt user to select files from a list.
+
+    Returns the chosen list or None to cancel.
+    """
+    print(f"Found {len(files)} file(s):")
+    for i, file in enumerate(files, 1):
+        print(f"  {i}. {file}")
+
+    print("\nSelect files to download:")
+    print("  - Press Enter to download all files")
+    print("  - Enter file number(s) separated by commas (e.g., 1,3,5)")
+    print("  - Enter 'c' to cancel")
+    print()
+
+    selection = input_with_esc_detection("Your selection: ").strip()
+    check_exit_input(selection)
+
+    if selection.lower() in ['c', 'cancel']:
+        return None
+
+    if not selection or selection.lower() in ['all', 'a']:
+        return files
+
+    try:
+        indices = [int(x.strip()) - 1 for x in selection.split(',')]
+        return [files[i] for i in indices if 0 <= i < len(files)]
+    except (ValueError, IndexError):
+        print("❌ Invalid selection\n")
+        return []
+
+
+def _prompt_local_directory(helper, smart_key):
+    """Prompt for a local directory for downloads, using smart path when set.
+
+    Creates the directory if it doesn't exist.
+    """
+    print("\nWhere to save the files?")
+    smart_path, _ = helper.get_smart_download_path(smart_key)
+    smart_dir = os.path.dirname(smart_path) if smart_path else None
+
+    if smart_dir:
+        print(f"💡 Suggested: {smart_dir}")
+        local_dir = input_with_esc_detection("Local directory (press Enter to use suggested): ").strip()
+    else:
+        local_dir = input_with_esc_detection("Local directory (press Enter for current directory): ").strip()
+    check_exit_input(local_dir)
+
+    if not local_dir:
+        if smart_dir:
+            local_dir = smart_dir
+            print(f"✓ Using: {local_dir}")
+        else:
+            local_dir = "."
+    else:
+        local_dir = os.path.expanduser(local_dir)
+
+    if local_dir != "." and not os.path.exists(local_dir):
+        os.makedirs(local_dir, exist_ok=True)
+        print(f"✓ Created directory: {local_dir}")
+
+    return local_dir
+
+
+def _run_directory_download(helper, bucket, key, aws_profile, probed_files):
+    """Run the directory download flow (list → select → download).
+
+    Returns (success, final_bucket, final_key). final_bucket/key reflect any
+    redirect performed by the zendesk-tickets/ → exa-to-gt/ fallback.
+    """
+    if probed_files is not None:
+        files = probed_files
+        print(f"\n✓ Found {len(files)} file(s) in s3://{bucket}/{key}\n")
+    else:
+        print(f"\n🔍 Listing files in s3://{bucket}/{key}...\n")
+        files = helper.list_s3_files(bucket, key, aws_profile)
+
+    if not files:
+        bucket, key, files = _try_zendesk_to_exa_fallback(helper, bucket, key, aws_profile)
+
+    if not files:
+        print(f"❌ No files found in s3://{bucket}/{key}")
+        return False, bucket, key
+
+    files_to_download = _select_files_from_list(files)
+    if files_to_download is None:
+        print("\nDownload cancelled\n")
+        return False, bucket, key
+    if not files_to_download:
+        return False, bucket, key
+
+    local_dir = _prompt_local_directory(helper, key)
+
+    print(f"\n📥 Downloading {len(files_to_download)} file(s)...\n")
+    success_count = 0
+    downloaded_s3_paths = []
+    for file in files_to_download:
+        local_path = os.path.join(local_dir, os.path.basename(file))
+        if helper.download_from_s3(bucket, file, local_path, aws_profile):
+            success_count += 1
+            downloaded_s3_paths.append(f"s3://{bucket}/{file}")
+
+    print(f"\n✅ Downloaded {success_count}/{len(files_to_download)} file(s) successfully")
+    if downloaded_s3_paths:
+        print(f"\n📁 S3 source paths:")
+        for sp in downloaded_s3_paths:
+            print(f"   {sp}")
+    return success_count > 0, bucket, key
+
+
+def _run_single_file_download(helper, bucket, key, aws_profile):
+    """Run the single-file download flow."""
+    print(f"\n📥 Downloading s3://{bucket}/{key}...")
+
+    default_name = os.path.basename(key) if key else "download"
+    smart_path, _ = helper.get_smart_download_path(key)
+    if smart_path:
+        print(f"💡 Suggested: {smart_path}")
+        local_path = input_with_esc_detection("Save as (press Enter to use suggested): ").strip()
+    else:
+        local_path = input_with_esc_detection(f"Save as (press Enter for '{default_name}'): ").strip()
+    check_exit_input(local_path)
+
+    if not local_path:
+        if smart_path:
+            local_path = smart_path
+            parent_dir = os.path.dirname(local_path)
+            if parent_dir and not os.path.exists(parent_dir):
+                os.makedirs(parent_dir, exist_ok=True)
+                print(f"✓ Created directory: {parent_dir}")
+            print(f"✓ Using: {local_path}")
+        else:
+            local_path = default_name
+    else:
+        local_path = os.path.expanduser(local_path)
+
+    if helper.download_from_s3(bucket, key, local_path, aws_profile):
+        print(f"\n📁 S3 source path:\n   s3://{bucket}/{key}")
+        return True
+    print("❌ Download failed")
+    return False
+
+
+def _prompt_post_download_choice(was_directory, bucket, key):
+    """Prompt the user for what to do after a successful download.
+
+    Returns one of:
+      ('same', same_bucket, same_key) — reuse this S3 path/parent
+      ('new', None, None)             — start over with a new path
+      ('exit', None, None)            — exit download mode
+    """
+    if was_directory:
+        same_bucket = bucket
+        same_key = key
+        same_label = f"s3://{bucket}/{key}"
+    else:
+        parent_key = os.path.dirname(key.rstrip('/'))
+        if parent_key:
+            same_bucket = bucket
+            same_key = parent_key + "/"
+            same_label = f"s3://{bucket}/{same_key}"
+        else:
+            same_bucket = None
+            same_key = None
+            same_label = None
+
+    if same_label:
+        prompt_text = (
+            "\nWhat would you like to do next?\n"
+            f"  [1] Download more from same location ({same_label})\n"
+            "  [2] Start a new download (different S3 path)\n"
+            "  [3] Exit\n"
+            "Your choice: "
+        )
+        choice = input_with_esc_detection(prompt_text, auto_submit_chars=['1', '2', '3']).strip()
+        check_exit_input(choice)
+        if choice == '1':
+            return 'same', same_bucket, same_key
+        if choice == '2':
+            return 'new', None, None
+        return 'exit', None, None
+
+    prompt_text = (
+        "\nWhat would you like to do next?\n"
+        "  [1] Start a new download\n"
+        "  [2] Exit\n"
+        "Your choice: "
+    )
+    choice = input_with_esc_detection(prompt_text, auto_submit_chars=['1', '2']).strip()
+    check_exit_input(choice)
+    if choice == '1':
+        return 'new', None, None
+    return 'exit', None, None
+
+
 def interactive_download_mode(debug=False):
     """Run the download functionality in interactive mode."""
     helper = GTLogsHelper(debug=debug)
@@ -3184,396 +3599,67 @@ def interactive_download_mode(debug=False):
     print("Download Mode - Retrieve files from S3")
     print("-"*50 + "\n")
 
+    aws_profile = None
+    same_path_bucket = None
+    same_path_key = None
+
     try:
-        # Get S3 path or identifier
-        print("Enter S3 path to download from.")
-        print("Examples:")
-        print("  - Full path: s3://gt-logs/zendesk-tickets/ZD-145980/file.tar.gz")
-        print("  - Ticket ID: ZD-145980 (will list available files)")
-        print("  - Ticket + Jira: ZD-145980-RED-172041")
-        print("  - Zendesk URL: https://redislabs.zendesk.com/agent/tickets/150002")
-        print("  - Jira URL: https://redislabs.atlassian.net/browse/RED-177450")
-        print("  - Jira ID: RED-177450 (searches for associated support packages)")
-        print()
+        while True:  # Continuation loop
+            # Get S3 path: either reuse from previous iteration or prompt fresh
+            if same_path_key is not None:
+                bucket = same_path_bucket
+                key = same_path_key
+                same_path_bucket = None
+                same_path_key = None
+                print(f"\n✓ Reusing S3 path: s3://{bucket}/{key}\n")
+            else:
+                bucket, key = _prompt_for_download_s3_path(helper)
 
-        while True:
-            s3_history = helper.get_history('s3_path')
-            s3_input = input_with_esc_detection("Enter S3 path, ticket ID, Zendesk URL, or Jira URL: ", s3_history).strip()
-            check_exit_input(s3_input)
+            # Profile + auth only on first iteration
+            if aws_profile is None:
+                aws_profile = _prompt_for_download_profile_and_auth(helper)
+                if aws_profile is None:
+                    return 1
 
-            if not s3_input:
-                print("❌ S3 path or ticket ID is required\n")
-                continue
+            # Probe whether the key is a directory before asking save path.
+            # If we get a non-empty listing, normalize key to end with "/" so
+            # the directory branch handles it without a wasted file-download
+            # attempt and second prompt.
+            probed_files = None
+            if not key.endswith("/"):
+                probed_files = helper.list_s3_files(bucket, key + "/", aws_profile)
+                if probed_files:
+                    key = key + "/"
 
-            # Check if input is Jira-only (URL or ID)
-            jira_id = GTLogsHelper.is_jira_only_input(s3_input)
-            if jira_id:
-                # Need to get AWS profile first for S3 search
-                print(f"\n🔍 Detected Jira ticket: {jira_id}")
-                print("Searching S3 for associated support packages...\n")
+            was_directory = key.endswith("/")
+            if was_directory:
+                success, bucket, key = _run_directory_download(
+                    helper, bucket, key, aws_profile, probed_files
+                )
+            else:
+                success = _run_single_file_download(helper, bucket, key, aws_profile)
 
-                # Get AWS profile (needed for search)
-                default_profile = helper.get_default_aws_profile()
-                if default_profile:
-                    search_profile = default_profile
-                else:
-                    search_profile = "gt-logs"
+            helper._save_history()
 
-                # Search for S3 paths matching this Jira ID
-                status, data = helper.find_s3_path_by_jira_id(jira_id, search_profile)
-
-                if status == "found":
-                    # Single match found
-                    print(f"✓ Found S3 path: s3://gt-logs/{data}\n")
-                    s3_input = f"s3://gt-logs/{data}"
-                elif status == "multiple":
-                    # Multiple matches found - let user choose
-                    print(f"Found {len(data)} S3 paths for {jira_id}:\n")
-                    for i, path in enumerate(data, 1):
-                        # Extract ZD ticket from path for display
-                        zd_match = re.search(r'(ZD-\d+)', path)
-                        zd_ticket = zd_match.group(1) if zd_match else "Unknown"
-                        print(f"  {i}. {zd_ticket}: s3://gt-logs/{path}")
-
+            if not success:
+                retry = input_with_esc_detection(
+                    "\nTry another download? (Y/n): ",
+                    auto_submit_chars=['y', 'Y', 'n', 'N']
+                ).strip().lower()
+                check_exit_input(retry)
+                if retry in ('', 'y', 'yes'):
                     print()
-                    choice = input_with_esc_detection("Select path number (or press Enter to cancel): ").strip()
-                    check_exit_input(choice)
-
-                    if not choice:
-                        print("Cancelled\n")
-                        continue
-
-                    try:
-                        idx = int(choice) - 1
-                        if 0 <= idx < len(data):
-                            s3_input = f"s3://gt-logs/{data[idx]}"
-                            print(f"\n✓ Selected: {s3_input}\n")
-                        else:
-                            print("❌ Invalid selection\n")
-                            continue
-                    except ValueError:
-                        print("❌ Invalid selection\n")
-                        continue
-                elif status == "none":
-                    print(f"❌ {data}")
-                    print(f"   No support packages found for Jira ticket {jira_id}\n")
                     continue
-                else:  # error
-                    print(f"❌ {data}\n")
-                    continue
-
-            # Parse the S3 path
-            bucket, key = helper.parse_s3_path(s3_input)
-            if not bucket or not key:
-                if "zendesk.com" in s3_input.lower():
-                    print(f"❌ Invalid Zendesk URL: Could not extract ticket ID from {s3_input}\n")
-                else:
-                    print(f"❌ Invalid S3 path or ticket ID: {s3_input}\n")
-                continue
-
-            helper.add_to_history('s3_path', s3_input)
-
-            # Show what was extracted if input was a Zendesk URL
-            if "zendesk.com" in s3_input.lower():
-                ticket_id = helper.extract_ticket_id_from_url(s3_input)
-                print(f"\n✓ Extracted ticket ID: ZD-{ticket_id}")
-
-            print(f"✓ Parsed: s3://{bucket}/{key}")
-            break
-
-        # Get AWS profile
-        default_profile = helper.get_default_aws_profile()
-        if default_profile:
-            profile_prompt = f"Enter AWS profile (press Enter for default '{default_profile}'): "
-        else:
-            profile_prompt = "Enter AWS profile (default: gt-logs): "
-
-        profile_history = helper.get_history('aws_profile')
-        aws_profile_input = input_with_esc_detection(profile_prompt, profile_history).strip()
-        check_exit_input(aws_profile_input)
-
-        if aws_profile_input:
-            aws_profile = aws_profile_input
-            helper.add_to_history('aws_profile', aws_profile)
-        elif default_profile:
-            aws_profile = default_profile
-            print(f"\n✓ Using default profile: {default_profile}")
-        else:
-            aws_profile = "gt-logs"
-            print(f"\n✓ Using default profile: gt-logs")
-
-        # Check authentication
-        print(f"\nChecking AWS authentication...")
-        is_authenticated = helper.check_aws_authentication(aws_profile, debug=helper.debug)
-
-        if not is_authenticated:
-            print(f"⚠️  AWS profile '{aws_profile}' is not authenticated")
-            if not helper.aws_sso_login(aws_profile):
-                print("❌ Cannot proceed without authentication\n")
                 return 1
-        else:
-            print(f"✓ AWS profile '{aws_profile}' is authenticated")
 
-        # If the key is a directory (ends with /), list files
-        if key.endswith("/"):
-            print(f"\n🔍 Listing files in s3://{bucket}/{key}...\n")
-            files = helper.list_s3_files(bucket, key, aws_profile)
-
-            if not files:
-                # Check if this is a zendesk-tickets path - if so, try exa-to-gt fallback
-                if key.startswith("zendesk-tickets/"):
-                    # Extract ZD ID from the key
-                    zd_match = re.search(r'(ZD-\d+)', key)
-                    if zd_match:
-                        zd_id = zd_match.group(1)
-                        print(f"❌ No files found in s3://{bucket}/{key}")
-                        print(f"🔍 Checking exa-to-gt/ for {zd_id} with Jira tickets...\n")
-
-                        # Search exa-to-gt for this ZD ID
-                        status, data = helper.find_s3_path_by_zendesk_id(zd_id, aws_profile)
-
-                        if status == "found":
-                            # Single match found
-                            print(f"✓ Found alternative path: s3://gt-logs/{data}")
-                            use_alt = input_with_esc_detection("Use this path instead? (Y/n): ").strip().lower()
-                            check_exit_input(use_alt)
-
-                            if use_alt == '' or use_alt in ['y', 'yes']:
-                                bucket = "gt-logs"
-                                key = data
-                                print(f"\n🔍 Listing files in s3://{bucket}/{key}...\n")
-                                files = helper.list_s3_files(bucket, key, aws_profile)
-                                if not files:
-                                    print(f"❌ No files found in s3://{bucket}/{key}")
-                                    return 1
-                            else:
-                                return 1
-                        elif status == "multiple":
-                            # Multiple matches found
-                            print(f"✓ Found {len(data)} alternative path(s):\n")
-                            for i, path in enumerate(data, 1):
-                                # Extract Jira ID from path for display
-                                jira_match = re.search(r'(RED|MOD|RDSC)-\d+', path)
-                                jira_id = jira_match.group(0) if jira_match else "Unknown"
-                                print(f"  {i}. {jira_id}: s3://gt-logs/{path}")
-
-                            print()
-                            choice = input_with_esc_detection("Select path number (or press Enter to cancel): ").strip()
-                            check_exit_input(choice)
-
-                            if not choice:
-                                return 1
-
-                            try:
-                                idx = int(choice) - 1
-                                if 0 <= idx < len(data):
-                                    bucket = "gt-logs"
-                                    key = data[idx]
-                                    print(f"\n🔍 Listing files in s3://{bucket}/{key}...\n")
-                                    files = helper.list_s3_files(bucket, key, aws_profile)
-                                    if not files:
-                                        print(f"❌ No files found in s3://{bucket}/{key}")
-                                        return 1
-                                else:
-                                    print("❌ Invalid selection")
-                                    return 1
-                            except ValueError:
-                                print("❌ Invalid selection")
-                                return 1
-                        else:
-                            # No matches in exa-to-gt either
-                            print(f"❌ No files found in exa-to-gt/ for {zd_id}")
-                            return 1
-                    else:
-                        print(f"❌ No files found in s3://{bucket}/{key}")
-                        return 1
-                else:
-                    print(f"❌ No files found in s3://{bucket}/{key}")
-                    return 1
-
-            print(f"Found {len(files)} file(s):")
-            for i, file in enumerate(files, 1):
-                print(f"  {i}. {file}")
-
-            # Ask which file(s) to download
-            print("\nSelect files to download:")
-            print("  - Press Enter to download all files")
-            print("  - Enter file number(s) separated by commas (e.g., 1,3,5)")
-            print("  - Enter 'c' to cancel")
-            print()
-
-            selection = input_with_esc_detection("Your selection: ").strip()
-            check_exit_input(selection)
-
-            if selection.lower() in ['c', 'cancel']:
-                print("\nDownload cancelled\n")
+            action, next_bucket, next_key = _prompt_post_download_choice(
+                was_directory, bucket, key
+            )
+            if action == 'exit':
                 return 0
-
-            files_to_download = []
-            if not selection or selection.lower() in ['all', 'a']:
-                files_to_download = files
-            else:
-                try:
-                    indices = [int(x.strip()) - 1 for x in selection.split(',')]
-                    files_to_download = [files[i] for i in indices if 0 <= i < len(files)]
-                except (ValueError, IndexError):
-                    print("❌ Invalid selection\n")
-                    return 1
-
-            if not files_to_download:
-                print("❌ No valid files selected\n")
-                return 1
-
-            # Get local directory - use smart path if configured
-            print("\nWhere to save the files?")
-            smart_path, zd_number = helper.get_smart_download_path(key)
-            if smart_path:
-                smart_dir = os.path.dirname(smart_path)
-                print(f"💡 Suggested: {smart_dir}")
-                local_dir = input_with_esc_detection(f"Local directory (press Enter to use suggested): ").strip()
-            else:
-                local_dir = input_with_esc_detection("Local directory (press Enter for current directory): ").strip()
-            check_exit_input(local_dir)
-
-            if not local_dir:
-                if smart_path:
-                    local_dir = smart_dir
-                    print(f"✓ Using: {local_dir}")
-                else:
-                    local_dir = "."
-            else:
-                # Expand ~ if present
-                local_dir = os.path.expanduser(local_dir)
-
-            # Create directory if it doesn't exist
-            if local_dir != "." and not os.path.exists(local_dir):
-                os.makedirs(local_dir, exist_ok=True)
-                print(f"✓ Created directory: {local_dir}")
-
-            # Download selected files
-            print(f"\n📥 Downloading {len(files_to_download)} file(s)...\n")
-            success_count = 0
-            for file in files_to_download:
-                local_path = os.path.join(local_dir, os.path.basename(file))
-                if helper.download_from_s3(bucket, file, local_path, aws_profile):
-                    success_count += 1
-
-            print(f"\n✅ Downloaded {success_count}/{len(files_to_download)} file(s) successfully")
-
-        else:
-            # Single file download
-            print(f"\n📥 Downloading s3://{bucket}/{key}...")
-
-            # Get local path - use smart path if configured
-            default_name = os.path.basename(key) if key else "download"
-            smart_path, zd_number = helper.get_smart_download_path(key)
-            if smart_path:
-                print(f"💡 Suggested: {smart_path}")
-                local_path = input_with_esc_detection(f"Save as (press Enter to use suggested): ").strip()
-            else:
-                local_path = input_with_esc_detection(f"Save as (press Enter for '{default_name}'): ").strip()
-            check_exit_input(local_path)
-
-            if not local_path:
-                if smart_path:
-                    local_path = smart_path
-                    # Create parent directory if needed
-                    parent_dir = os.path.dirname(local_path)
-                    if parent_dir and not os.path.exists(parent_dir):
-                        os.makedirs(parent_dir, exist_ok=True)
-                        print(f"✓ Created directory: {parent_dir}")
-                    print(f"✓ Using: {local_path}")
-                else:
-                    local_path = default_name
-            else:
-                # Expand ~ if present
-                local_path = os.path.expanduser(local_path)
-
-            # Download the file
-            if not helper.download_from_s3(bucket, key, local_path, aws_profile):
-                # Check if it might be a directory (missing trailing slash)
-                if not key.endswith("/"):
-                    print(f"\n💡 File download failed. Checking if this is a directory...\n")
-                    dir_key = key + "/"
-                    files = helper.list_s3_files(bucket, dir_key, aws_profile)
-
-                    if files:
-                        # It's a directory! Let user select files
-                        print(f"✓ Found {len(files)} file(s) in directory:\n")
-                        for i, file in enumerate(files, 1):
-                            print(f"  {i}. {file}")
-
-                        # Ask which file(s) to download
-                        print("\nSelect files to download:")
-                        print("  - Press Enter to download all files")
-                        print("  - Enter file number(s) separated by commas (e.g., 1,3,5)")
-                        print("  - Enter 'c' to cancel")
-                        print()
-
-                        selection = input_with_esc_detection("Your selection: ").strip()
-                        check_exit_input(selection)
-
-                        if selection.lower() in ['c', 'cancel']:
-                            print("\nDownload cancelled\n")
-                            return 0
-
-                        files_to_download = []
-                        if not selection or selection.lower() in ['all', 'a']:
-                            files_to_download = files
-                        else:
-                            try:
-                                indices = [int(x.strip()) - 1 for x in selection.split(',')]
-                                files_to_download = [files[i] for i in indices if 0 <= i < len(files)]
-                            except (ValueError, IndexError):
-                                print("❌ Invalid selection\n")
-                                return 1
-
-                        if not files_to_download:
-                            print("❌ No valid files selected\n")
-                            return 1
-
-                        # Get download directory - use smart path if configured
-                        smart_path, zd_number = helper.get_smart_download_path(dir_key)
-                        if smart_path:
-                            smart_dir = os.path.dirname(smart_path)
-                            print(f"💡 Suggested: {smart_dir}")
-                            local_dir = input_with_esc_detection(f"Local directory (press Enter to use suggested): ").strip()
-                        else:
-                            local_dir = input_with_esc_detection("Local directory (press Enter for current directory): ").strip()
-                        check_exit_input(local_dir)
-
-                        if not local_dir:
-                            if smart_path:
-                                local_dir = smart_dir
-                                print(f"✓ Using: {local_dir}")
-                            else:
-                                local_dir = "."
-                        else:
-                            local_dir = os.path.expanduser(local_dir)
-
-                        if local_dir != "." and not os.path.exists(local_dir):
-                            os.makedirs(local_dir, exist_ok=True)
-                            print(f"✓ Created directory: {local_dir}")
-
-                        # Download selected files
-                        print(f"\n📥 Downloading {len(files_to_download)} file(s)...\n")
-                        success_count = 0
-                        for file in files_to_download:
-                            local_file_path = os.path.join(local_dir, os.path.basename(file))
-                            if helper.download_from_s3(bucket, file, local_file_path, aws_profile):
-                                success_count += 1
-
-                        print(f"\n✅ Downloaded {success_count}/{len(files_to_download)} file(s) successfully")
-                    else:
-                        print("❌ Download failed")
-                        return 1
-                else:
-                    print("❌ Download failed")
-                    return 1
-
-        # Save history
-        helper._save_history()
-        return 0
+            same_path_bucket = next_bucket
+            same_path_key = next_key
+            print()
 
     except UserExitException:
         print("👋 Exiting...\n")
@@ -3700,9 +3786,10 @@ Examples:
         return 0
 
     # Check for resume (unless --no-resume is specified)
-    resume_state = None
+    # check_and_prompt_resume mutates helper.current_state internally;
+    # we don't need the return value here, just the side effect.
     if not args.no_resume and not args.download_path:  # Don't check for download mode yet
-        resume_state = helper.check_and_prompt_resume()
+        helper.check_and_prompt_resume()
 
     # Handle config commands
     if args.set_profile:
@@ -3812,7 +3899,7 @@ Examples:
             output_path = os.path.expanduser(args.output_path)
         else:
             # Try smart path based on ZD ticket
-            smart_path, zd_number = helper.get_smart_download_path(key)
+            smart_path, _ = helper.get_smart_download_path(key)
             if smart_path:
                 output_path = os.path.dirname(smart_path)
                 print(f"💡 Using configured download directory: {output_path}")
@@ -3933,7 +4020,7 @@ Examples:
                     print(f"✓ AWS profile '{used_profile}' is already authenticated\n")
 
             # Execute directory upload
-            success_count, failure_count, _ = helper.execute_directory_upload(
+            _, failure_count, _ = helper.execute_directory_upload(
                 args.directory,
                 zd_formatted,
                 jira_formatted,
@@ -4046,7 +4133,7 @@ Examples:
                     print(f"✓ AWS profile '{used_profile}' is already authenticated\n")
 
                 # Execute batch upload
-                success_count, failure_count, _ = helper.execute_batch_upload(
+                _, failure_count, _ = helper.execute_batch_upload(
                     file_paths, zd_formatted, jira_formatted, used_profile,
                     max_retries=args.max_retries,
                     verify=args.verify
@@ -4115,7 +4202,7 @@ Examples:
                     print(f"✓ AWS profile '{used_profile}' is already authenticated\n")
 
                 # Execute the upload
-                success = helper.execute_s3_upload(cmd)
+                success = helper.execute_s3_upload(cmd, s3_path=s3_path)
                 return 0 if success else 1
 
             # Show AWS SSO login reminder (when not executing)
