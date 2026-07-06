@@ -548,7 +548,14 @@ to purge GitHub's CDN cache. The only solution is to use a fresh tag name.
 
 ## Version History
 
-**Current Version:** v1.11.1 - Quiet download probe
+**Current Version:** v1.11.2 - Per-session SSO auth check
+
+**v1.11.2 (2026-07-06):**
+
+- Fixed false-positive authentication check: `check_sso_cache` returned `True` whenever *any* cached SSO token was still valid, ignoring which SSO session it belonged to. A valid token for an unrelated profile made the tool report "✓ authenticated" while the actual S3 transfer failed with `Token has expired and refresh failed` — and the auto-login never triggered
+- `check_sso_cache` now resolves the profile's own `sso_start_url` (via its `sso_session` → `[sso-session …]` config section, or a legacy inline `sso_start_url`) and only trusts the cached token whose `startUrl` matches. Matching is on the `startUrl` field inside the JSON (AWS CLI keys these files inconsistently — by session name in some versions, by start URL in others), with trailing-slash normalization
+- Expired matching token → returns `False` (triggers `aws sso login`); no matching/unresolvable token → returns `None` (defers to the authoritative `sts get-caller-identity` network check)
+- Added `tests/test_sso_cache_scoping.py` regression test
 
 **v1.11.1 (2026-06-11):**
 

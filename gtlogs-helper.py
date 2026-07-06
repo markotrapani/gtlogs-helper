@@ -5,7 +5,7 @@ Uploads and downloads Redis Support packages to/from S3 buckets.
 Generates S3 bucket URLs and AWS CLI commands for Redis Support packages.
 """
 
-VERSION = "1.11.1"
+VERSION = "1.11.2"
 
 import argparse
 import configparser
@@ -901,6 +901,35 @@ class GTLogsHelper:
                     print(f"   [DEBUG] Profile '{aws_profile}' is not an SSO profile ({time.time() - start_time:.3f}s)")
                 return None
 
+            # Resolve the SSO start URL that THIS profile actually uses. Each
+            # cached token belongs to exactly one SSO start URL, and we must
+            # only trust the token for this profile's session — a valid token
+            # for an unrelated session/account must NOT count as auth here.
+            # (Without this scoping, a still-valid token for a different profile
+            # made the check report "authenticated" while the real S3 call failed
+            # with "Token has expired and refresh failed".)
+            def _normalize_url(url):
+                return url.rstrip('/') if url else url
+
+            sso_session = config[profile_section].get('sso_session')
+            target_url = None
+            if sso_session:
+                session_section = f'sso-session {sso_session}'
+                if session_section in config:
+                    target_url = config[session_section].get('sso_start_url')
+            if not target_url:
+                # Legacy profiles embed sso_start_url directly on the profile.
+                target_url = config[profile_section].get('sso_start_url')
+
+            if not target_url:
+                # Can't determine which cached token belongs to this profile;
+                # defer to the authoritative network check rather than guessing.
+                if debug:
+                    print(f"   [DEBUG] Could not resolve SSO start URL for '{aws_profile}'; deferring to network check ({time.time() - start_time:.3f}s)")
+                return None
+
+            target_url = _normalize_url(target_url)
+
             # Check SSO cache directory
             cache_dir = Path.home() / '.aws' / 'sso' / 'cache'
             if not cache_dir.exists():
@@ -908,29 +937,45 @@ class GTLogsHelper:
                     print(f"   [DEBUG] SSO cache directory not found ({time.time() - start_time:.3f}s)")
                 return False
 
-            # Check all cache files for valid tokens
+            # Only trust the cached token whose startUrl matches this profile's
+            # SSO session. AWS CLI keys these files inconsistently (by session
+            # name in some versions, by start URL in others), so we match on the
+            # startUrl field inside the JSON rather than on the filename hash.
             now = datetime.now(timezone.utc)
+            found_matching_token = False
             for cache_file in cache_dir.glob('*.json'):
                 try:
                     with open(cache_file) as f:
                         cache_data = json.load(f)
 
-                    # Check if token exists and hasn't expired
-                    if 'accessToken' in cache_data and 'expiresAt' in cache_data:
-                        # expiresAt is in ISO format like "2025-01-17T12:34:56Z"
-                        expires_at = datetime.fromisoformat(cache_data['expiresAt'].replace('Z', '+00:00'))
+                    if 'accessToken' not in cache_data or 'expiresAt' not in cache_data:
+                        continue
+                    if _normalize_url(cache_data.get('startUrl')) != target_url:
+                        continue
 
-                        if expires_at > now:
-                            if debug:
-                                print(f"   [DEBUG] Valid SSO token found in cache (expires {cache_data['expiresAt']}) ({time.time() - start_time:.3f}s)")
-                            return True
+                    found_matching_token = True
+                    # expiresAt is in ISO format like "2025-01-17T12:34:56Z"
+                    expires_at = datetime.fromisoformat(cache_data['expiresAt'].replace('Z', '+00:00'))
+                    if expires_at > now:
+                        if debug:
+                            print(f"   [DEBUG] Valid SSO token found for '{aws_profile}' (expires {cache_data['expiresAt']}) ({time.time() - start_time:.3f}s)")
+                        return True
                 except (json.JSONDecodeError, KeyError, ValueError):
                     # Skip invalid cache files
                     continue
 
+            if found_matching_token:
+                # This profile's token exists but is expired -> re-auth needed.
+                if debug:
+                    print(f"   [DEBUG] SSO token for '{aws_profile}' is expired ({time.time() - start_time:.3f}s)")
+                return False
+
+            # No cached token for this profile's session at all; defer to the
+            # authoritative network check instead of assuming (avoids false
+            # negatives if the cache is keyed in an unexpected way).
             if debug:
-                print(f"   [DEBUG] No valid SSO tokens found in cache ({time.time() - start_time:.3f}s)")
-            return False
+                print(f"   [DEBUG] No cached token found for '{aws_profile}'; deferring to network check ({time.time() - start_time:.3f}s)")
+            return None
 
         except Exception as e:
             if debug:
